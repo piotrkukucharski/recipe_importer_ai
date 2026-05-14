@@ -9,7 +9,6 @@ import (
 	"recipe_importer_ai/api"
 	"recipe_importer_ai/services"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -21,6 +20,7 @@ func main() {
 	// Parse CLI flags
 	batchFile := flag.String("file", "", "Path to txt file with URLs for batch import")
 	spaceID := flag.String("space", "", "Tandoor Space ID for CLI import")
+	lang := flag.String("lang", "Polish", "Target language for recipes (e.g., Polish, English, German)")
 	flag.Parse()
 
 	// Load .env file
@@ -48,7 +48,7 @@ func main() {
 
 	// CLI Batch Mode
 	if *batchFile != "" {
-		runBatchCLI(h, *batchFile, *spaceID)
+		runBatchCLI(h, *batchFile, *spaceID, *lang)
 		return
 	}
 
@@ -56,9 +56,9 @@ func main() {
 	runServer(h)
 }
 
-func runBatchCLI(h *api.Handler, filePath string, spaceID string) {
+func runBatchCLI(h *api.Handler, filePath string, spaceID string, lang string) {
 	cid := fmt.Sprintf("batch-%d", time.Now().Unix())
-	services.LogJSON(cid, "CLI", fmt.Sprintf("Starting CLI batch import from %s in space %s", filePath, spaceID), "INFO")
+	services.LogJSON(cid, "CLI", fmt.Sprintf("Starting CLI batch import from %s in space %s (Target Language: %s)", filePath, spaceID, lang), "INFO")
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -67,25 +67,18 @@ func runBatchCLI(h *api.Handler, filePath string, spaceID string) {
 	}
 	defer file.Close()
 
-	var wg sync.WaitGroup
 	scanner := bufio.NewScanner(file)
 	count := 0
 
 	for scanner.Scan() {
 		url := strings.TrimSpace(scanner.Text())
 		if url != "" && !strings.HasPrefix(url, "#") {
-			wg.Add(1)
 			count++
-			go func(u string) {
-				defer wg.Done()
-				h.ProcessURL(u, spaceID, cid)
-			}(url)
+			h.ProcessURL(url, spaceID, lang, cid)
 		}
 	}
 
-	services.LogJSON(cid, "CLI", fmt.Sprintf("Scheduled %d URLs, waiting for completion...", count), "INFO")
-	wg.Wait()
-	services.LogJSON(cid, "CLI", "Batch import finished", "INFO")
+	services.LogJSON(cid, "CLI", fmt.Sprintf("Finished processing %d URLs sequentially", count), "INFO")
 }
 
 func runServer(h *api.Handler) {

@@ -44,6 +44,17 @@ func (h *Handler) ShowIndex(c echo.Context) error {
         </select>
     </div>
     <div class="form-group">
+        <label for="lang">Target Language:</label>
+        <select id="lang">
+            <option value="Polish">Polish</option>
+            <option value="English">English</option>
+            <option value="German">German</option>
+            <option value="French">French</option>
+            <option value="Spanish">Spanish</option>
+            <option value="Italian">Italian</option>
+        </select>
+    </div>
+    <div class="form-group">
         <label for="url">Recipe or Profile URL:</label>
         <input type="text" id="url" placeholder="https://www.instagram.com/p/..." required>
     </div>
@@ -53,6 +64,7 @@ func (h *Handler) ShowIndex(c echo.Context) error {
 
     <script>
         const spaceSelect = document.getElementById('space');
+        const langSelect = document.getElementById('lang');
         const urlInput = document.getElementById('url');
         const importBtn = document.getElementById('importBtn');
         const statusDiv = document.getElementById('status');
@@ -76,6 +88,7 @@ func (h *Handler) ShowIndex(c echo.Context) error {
         importBtn.addEventListener('click', () => {
             const url = urlInput.value;
             const space = spaceSelect.value;
+            const lang = langSelect.value;
             if (!url) return alert('Please provide a URL!');
 
             statusDiv.style.display = 'block';
@@ -83,7 +96,7 @@ func (h *Handler) ShowIndex(c echo.Context) error {
             statusDiv.textContent = 'Starting import...';
             importBtn.disabled = true;
 
-            fetch('/import?url=' + encodeURIComponent(url) + '&space=' + space)
+            fetch('/import?url=' + encodeURIComponent(url) + '&space=' + space + '&lang=' + lang)
                 .then(res => {
                     if (res.status === 202) {
                         statusDiv.className = 'success';
@@ -120,14 +133,15 @@ func (h *Handler) GetSpaces(c echo.Context) error {
 func (h *Handler) ImportRecipe(c echo.Context) error {
 	url := c.QueryParam("url")
 	spaceID := c.QueryParam("space")
+	lang := c.QueryParam("lang")
 	if url == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "url parameter is required"})
 	}
 
 	correlationID := c.Request().Header.Get("X-Correlation-ID")
-	services.LogJSON(correlationID, "API", fmt.Sprintf("Received import request for URL: %s in space %s", url, spaceID), "INFO")
+	services.LogJSON(correlationID, "API", fmt.Sprintf("Received import request for URL: %s in space %s (Lang: %s)", url, spaceID, lang), "INFO")
 
-	go h.ProcessURL(url, spaceID, correlationID)
+	go h.ProcessURL(url, spaceID, lang, correlationID)
 
 	return c.JSON(http.StatusAccepted, map[string]interface{}{
 		"message":        "Import started",
@@ -135,7 +149,7 @@ func (h *Handler) ImportRecipe(c echo.Context) error {
 	})
 }
 
-func (h *Handler) ProcessURL(url string, spaceID string, cid string) {
+func (h *Handler) ProcessURL(url string, spaceID string, lang string, cid string) {
 	services.LogJSON(cid, "Background", fmt.Sprintf("Starting processing for URL: %s", url), "INFO")
 
 	items, err := h.Apify.ScrapeItems(url, cid)
@@ -147,19 +161,19 @@ func (h *Handler) ProcessURL(url string, spaceID string, cid string) {
 	if len(items) > 1 {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Detected multiple items (%d), processing as profile/batch sequentially", len(items)), "INFO")
 		for _, item := range items {
-			h.processScrapedItem(item, spaceID, cid)
+			h.processScrapedItem(item, spaceID, lang, cid)
 		}
 	} else if len(items) == 1 {
-		h.processScrapedItem(items[0], spaceID, cid)
+		h.processScrapedItem(items[0], spaceID, lang, cid)
 	} else {
 		services.LogJSON(cid, "Background", "No items found to process", "WARN")
 	}
 }
 
-func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, cid string) {
+func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, lang string, cid string) {
 	ctx := context.Background()
 	
-	recipe, err := h.Gemini.ProcessRecipe(ctx, item.Text, cid)
+	recipe, err := h.Gemini.ProcessRecipe(ctx, item.Text, lang, cid)
 	if err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Gemini stage for %s: %v", item.URL, err), "ERROR")
 		return

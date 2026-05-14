@@ -25,53 +25,57 @@ func NewGeminiService(ctx context.Context) (*GeminiService, error) {
 	return &GeminiService{Client: client}, nil
 }
 
-func (s *GeminiService) ProcessRecipe(ctx context.Context, text string, correlationID string) (*models.Recipe, error) {
-	LogJSON(correlationID, "Gemini", "Starting AI processing of extracted text", "INFO")
+func (s *GeminiService) ProcessRecipe(ctx context.Context, text string, targetLanguage string, correlationID string) (*models.Recipe, error) {
+	LogJSON(correlationID, "Gemini", fmt.Sprintf("Starting AI processing of extracted text (Target Language: %s)", targetLanguage), "INFO")
 	model := s.Client.GenerativeModel("gemini-3-flash-preview")
 	
 	// Force JSON output
 	model.ResponseMIMEType = "application/json"
 
+	if targetLanguage == "" {
+		targetLanguage = "Polish"
+	}
+
 	prompt := fmt.Sprintf(`
-Przetwórz poniższy tekst i wyodrębnij z niego przepis kulinarny. 
+Process the following text and extract a culinary recipe from it.
 
-Jeśli tekst NIE zawiera przepisu (np. jest to zwykły post, reklama, informacja o podróży), zwróć pusty obiekt JSON: {}
+If the text does NOT contain a recipe (e.g., it is a regular post, advertisement, travel info), return an empty JSON object: {}
 
-WAŻNE: Cały przepis, w tym jego nazwa, opis, nazwy kroków, instrukcje oraz nazwy i notatki o składnikach MUSZĄ być w języku polskim. Jeśli tekst źródłowy jest w innym języku (np. angielskim), przetłumacz go dokładnie na język polski.
+IMPORTANT: The entire recipe, including its name, description, step names, instructions, and ingredient names/notes MUST be in the following language: %s. If the source text is in a different language, translate it accurately to %s.
 
-Dodaj słowa kluczowe (tagi) do przepisu. Wybierz odpowiednie z poniższej listy lub dodaj własne, jeśli pasują:
-wegańskie, wegetariańskie, na śniadanie, na obiad, na kolację, przekąski, na grilla, kawa, napój, herbata, smoothie, kuchnia polska, kuchnia japońska, kuchnia koreańska, kuchnia chińska, kuchnia syczuańska, drink alkoholowy, drink bezalkoholowy, naleśniki, ciasta, zupa, zupa krem, chleb, kuchania włoska, makaron, sernik, tort, sałatka.
+Add keywords (tags) to the recipe. Choose appropriate ones from the list below or add your own if they fit (translate them to %s as well):
+vegan, vegetarian, for breakfast, for dinner, for lunch, snacks, for grill, coffee, drink, tea, smoothie, Polish cuisine, Japanese cuisine, Korean cuisine, Chinese cuisine, Sichuan cuisine, alcoholic drink, non-alcoholic drink, pancakes, cakes, soup, cream soup, bread, Italian cuisine, pasta, cheesecake, cake, salad.
 
-Zwróć wynik jako ściśle sformatowany obiekt JSON (nie tablicę!) zgodny z poniższą strukturą:
+Return the result as a strictly formatted JSON object (not an array!) matching the structure below:
 {
-  "name": "Nazwa przepisu (po polsku)",
-  "description": "Krótki opis (po polsku)",
-  "working_time": czas przygotowania w minutach (int),
-  "waiting_time": czas oczekiwania w minutach (int),
-  "servings": liczba porcji (int),
+  "name": "Recipe Name (in %s)",
+  "description": "Short description (in %s)",
+  "working_time": preparation time in minutes (int),
+  "waiting_time": waiting time in minutes (int),
+  "servings": number of servings (int),
   "keywords": ["tag1", "tag2"],
   "steps": [
     {
-      "name": "Nazwa kroku (po polsku)",
-      "instruction": "Dokładna instrukcja kroku (po polsku)",
+      "name": "Step Name (in %s)",
+      "instruction": "Detailed step instruction (in %s)",
       "ingredients": [
         {
-          "food": {"name": "nazwa składnika (po polsku)"},
-          "unit": {"name": "jednostka (po polsku), np. g, ml, szt, łyżka"},
-          "amount": ilość (float),
-          "note": "dodatkowa notatka o składniku (po polsku)"
+          "food": {"name": "ingredient name (in %s)"},
+          "unit": {"name": "unit (in %s), e.g., g, ml, pcs, tbsp"},
+          "amount": amount (float),
+          "note": "additional ingredient note (in %s)"
         }
       ]
     }
   ]
 }
 
-Ważne: Podziel przepis na logiczne kroki. Każdy krok musi mieć przypisane składniki, które są w nim używane. 
-Jeśli w tekście nie ma jednostki, użyj pustego ciągu znaków (aplikacja wstawi domyślną). Jeśli nie ma ilości, użyj 0. Jeśli nie ma informacji o liczbie porcji, użyj 1.
+Important: Divide the recipe into logical steps. Each step must have the ingredients assigned that are used in it.
+If there is no unit in the text, use an empty string. If there is no amount, use 0. If there is no servings info, use 1.
 
-Tekst do przetworzenia:
+Text to process:
 %s
-`, text)
+`, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, text)
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
