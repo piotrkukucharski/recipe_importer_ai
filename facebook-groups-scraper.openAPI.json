@@ -1,0 +1,413 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "version": "0.0",
+    "x-build-id": "zxjLyUOlC2eVL1RdO"
+  },
+  "servers": [
+    {
+      "url": "https://api.apify.com/v2"
+    }
+  ],
+  "paths": {
+    "/acts/apify~facebook-groups-scraper/run-sync-get-dataset-items": {
+      "post": {
+        "operationId": "run-sync-get-dataset-items-apify-facebook-groups-scraper",
+        "x-openai-isConsequential": false,
+        "summary": "Executes an Actor, waits for its completion, and returns Actor's dataset items in response.",
+        "tags": [
+          "Run Actor"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/inputSchema"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Enter your Apify token here"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/acts/apify~facebook-groups-scraper/runs": {
+      "post": {
+        "operationId": "runs-sync-apify-facebook-groups-scraper",
+        "x-openai-isConsequential": false,
+        "summary": "Executes an Actor and returns information about the initiated run in response.",
+        "tags": [
+          "Run Actor"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/inputSchema"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Enter your Apify token here"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runsResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/acts/apify~facebook-groups-scraper/run-sync": {
+      "post": {
+        "operationId": "run-sync-apify-facebook-groups-scraper",
+        "x-openai-isConsequential": false,
+        "summary": "Executes an Actor, waits for completion, and returns the OUTPUT from Key-value store in response.",
+        "tags": [
+          "Run Actor"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/inputSchema"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Enter your Apify token here"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "startUrls"
+        ],
+        "properties": {
+          "startUrls": {
+            "title": "🔗 Facebook group URLs",
+            "type": "array",
+            "description": "Insert a URL of a valid Facebook group. Only <strong>public</strong> Facebook groups can be scraped.",
+            "items": {
+              "type": "object",
+              "required": [
+                "url"
+              ],
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "title": "URL of a web page",
+                  "format": "uri"
+                }
+              }
+            }
+          },
+          "resultsLimit": {
+            "title": "✍️ Number of posts",
+            "minimum": 1,
+            "type": "integer",
+            "description": "Select the number of posts you want to scrape. If this limit is not set, as many results as possible will be returned."
+          },
+          "viewOption": {
+            "title": "📜 Sorting order",
+            "enum": [
+              "CHRONOLOGICAL",
+              "RECENT_ACTIVITY",
+              "TOP_POSTS",
+              "CHRONOLOGICAL_LISTINGS"
+            ],
+            "type": "string",
+            "description": "Select sorting order by which the posts should be scraped. Please note that the <strong>Number of results</strong> field will be applied to New posts only. The BuySell items sorting will return results for BuySell groups only.",
+            "default": "CHRONOLOGICAL"
+          },
+          "searchGroupKeyword": {
+            "title": "Search by letter (words are allowed, but will not return any results in most cases)",
+            "type": "string",
+            "description": "Without logging in, search results are VERY limited, so searching by word will return nothing in most cases. To get more messages, it is recommended to use a one or two letter search and change the year."
+          },
+          "searchGroupYear": {
+            "title": "🗓 Search keyword by year",
+            "type": "string",
+            "description": "The scraper will extract Facebook posts by this year. To use this field, you need to fill in the <strong>Search by letter</strong> field above ↑."
+          },
+          "onlyPostsNewerThan": {
+            "title": "Posts newer than",
+            "pattern": "^(\\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])(T[0-2]\\d:[0-5]\\d(:[0-5]\\d)?(\\.\\d+)?Z?)?$|^(\\d+)\\s*(minute|hour|day|week|month|year)s?$",
+            "type": "string",
+            "description": "Scrapes post from the provided date to the present day. The date should be in YYYY-MM-DD or full ISO absolute format or in relative format e.g. 1 days, 2 months, 3 years. The JSON input also supports adding time units (UTC timezone): Full or partial ISO timestamp (e.g., `2025-09-23T10:02:01`) as absolute time and relative time, e.g., `1 hour` or `2 minutes`."
+          }
+        }
+      },
+      "runsResponseSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "actId": {
+                "type": "string"
+              },
+              "userId": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "string",
+                "format": "date-time",
+                "example": "2025-01-08T00:00:00.000Z"
+              },
+              "finishedAt": {
+                "type": "string",
+                "format": "date-time",
+                "example": "2025-01-08T00:00:00.000Z"
+              },
+              "status": {
+                "type": "string",
+                "example": "READY"
+              },
+              "meta": {
+                "type": "object",
+                "properties": {
+                  "origin": {
+                    "type": "string",
+                    "example": "API"
+                  },
+                  "userAgent": {
+                    "type": "string"
+                  }
+                }
+              },
+              "stats": {
+                "type": "object",
+                "properties": {
+                  "inputBodyLen": {
+                    "type": "integer",
+                    "example": 2000
+                  },
+                  "rebootCount": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "restartCount": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "resurrectCount": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "computeUnits": {
+                    "type": "integer",
+                    "example": 0
+                  }
+                }
+              },
+              "options": {
+                "type": "object",
+                "properties": {
+                  "build": {
+                    "type": "string",
+                    "example": "latest"
+                  },
+                  "timeoutSecs": {
+                    "type": "integer",
+                    "example": 300
+                  },
+                  "memoryMbytes": {
+                    "type": "integer",
+                    "example": 1024
+                  },
+                  "diskMbytes": {
+                    "type": "integer",
+                    "example": 2048
+                  }
+                }
+              },
+              "buildId": {
+                "type": "string"
+              },
+              "defaultKeyValueStoreId": {
+                "type": "string"
+              },
+              "defaultDatasetId": {
+                "type": "string"
+              },
+              "defaultRequestQueueId": {
+                "type": "string"
+              },
+              "buildNumber": {
+                "type": "string",
+                "example": "1.0.0"
+              },
+              "containerUrl": {
+                "type": "string"
+              },
+              "usage": {
+                "type": "object",
+                "properties": {
+                  "ACTOR_COMPUTE_UNITS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "DATASET_READS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "DATASET_WRITES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "KEY_VALUE_STORE_READS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "KEY_VALUE_STORE_WRITES": {
+                    "type": "integer",
+                    "example": 1
+                  },
+                  "KEY_VALUE_STORE_LISTS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "REQUEST_QUEUE_READS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "REQUEST_QUEUE_WRITES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "DATA_TRANSFER_INTERNAL_GBYTES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "DATA_TRANSFER_EXTERNAL_GBYTES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "PROXY_RESIDENTIAL_TRANSFER_GBYTES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "PROXY_SERPS": {
+                    "type": "integer",
+                    "example": 0
+                  }
+                }
+              },
+              "usageTotalUsd": {
+                "type": "number",
+                "example": 0.00005
+              },
+              "usageUsd": {
+                "type": "object",
+                "properties": {
+                  "ACTOR_COMPUTE_UNITS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "DATASET_READS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "DATASET_WRITES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "KEY_VALUE_STORE_READS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "KEY_VALUE_STORE_WRITES": {
+                    "type": "number",
+                    "example": 0.00005
+                  },
+                  "KEY_VALUE_STORE_LISTS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "REQUEST_QUEUE_READS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "REQUEST_QUEUE_WRITES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "DATA_TRANSFER_INTERNAL_GBYTES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "DATA_TRANSFER_EXTERNAL_GBYTES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "PROXY_RESIDENTIAL_TRANSFER_GBYTES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "PROXY_SERPS": {
+                    "type": "integer",
+                    "example": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

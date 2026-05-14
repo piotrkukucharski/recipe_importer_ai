@@ -1,0 +1,568 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "version": "0.0",
+    "x-build-id": "EUurYbVpzsyVYILS5"
+  },
+  "servers": [
+    {
+      "url": "https://api.apify.com/v2"
+    }
+  ],
+  "paths": {
+    "/acts/streamers~youtube-scraper/run-sync-get-dataset-items": {
+      "post": {
+        "operationId": "run-sync-get-dataset-items-streamers-youtube-scraper",
+        "x-openai-isConsequential": false,
+        "summary": "Executes an Actor, waits for its completion, and returns Actor's dataset items in response.",
+        "tags": [
+          "Run Actor"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/inputSchema"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Enter your Apify token here"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/acts/streamers~youtube-scraper/runs": {
+      "post": {
+        "operationId": "runs-sync-streamers-youtube-scraper",
+        "x-openai-isConsequential": false,
+        "summary": "Executes an Actor and returns information about the initiated run in response.",
+        "tags": [
+          "Run Actor"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/inputSchema"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Enter your Apify token here"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/runsResponseSchema"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/acts/streamers~youtube-scraper/run-sync": {
+      "post": {
+        "operationId": "run-sync-streamers-youtube-scraper",
+        "x-openai-isConsequential": false,
+        "summary": "Executes an Actor, waits for completion, and returns the OUTPUT from Key-value store in response.",
+        "tags": [
+          "Run Actor"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/inputSchema"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Enter your Apify token here"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "searchQueries": {
+            "title": "Search terms",
+            "type": "array",
+            "description": "Enter search terms just like you would enter it in YouTube's search bar.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "maxResults": {
+            "title": "Maximum videos per search term",
+            "minimum": 0,
+            "maximum": 999999,
+            "type": "integer",
+            "description": "Limit the number of videos you want to crawl. If you scrape a channel, acts as a limit for regular videos.",
+            "default": 0
+          },
+          "maxResultsShorts": {
+            "title": "Maximum shorts per search term",
+            "minimum": 0,
+            "maximum": 999999,
+            "type": "integer",
+            "description": "Limit the number of Shorts videos you want to crawl.",
+            "default": 0
+          },
+          "maxResultStreams": {
+            "title": "Maximum streams per search term",
+            "minimum": 0,
+            "maximum": 999999,
+            "type": "integer",
+            "description": "Limit the number of Stream videos you want to crawl.",
+            "default": 0
+          },
+          "startUrls": {
+            "title": "Direct URLs",
+            "type": "array",
+            "description": "Enter a link to a <a href='https://www.youtube.com/watch?v=xObhZ0Ga7EQ' target='_blank' rel='noopener'>YouTube video</a>, <a href='https://www.youtube.com/c/Apify' target='_blank' rel='noopener'>channel</a>, <a href='https://www.youtube.com/playlist?list=PLObrtcm1Kw6PmbXg8bmfJN-o2Hgx8sidf' target='_blank' rel='noopener'>playlist</a>, <a href='https://www.youtube.com/hashtag/apify' target='_blank' rel='noopener'>hashtag</a> or <a href='https://www.youtube.com/results?search_query=crawlee' target='_blank' rel='noopener'>search results page</a>. You can also import a CSV file or Google Sheet with a list of URLs.<br><b>Note:</b> Input from <i>Search term</i> will be ignored when using this option. If you only want to scrape shorts/streams, set Maximum search results to 0, otherwise they represented number of regular videos requested",
+            "default": [],
+            "items": {
+              "type": "object",
+              "required": [
+                "url"
+              ],
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "title": "URL of a web page",
+                  "format": "uri"
+                }
+              }
+            }
+          },
+          "downloadSubtitles": {
+            "title": "Download subtitles",
+            "type": "boolean",
+            "description": "If set to true, the scraper will download subtitles for the video and convert them to .srt format."
+          },
+          "saveSubsToKVS": {
+            "title": "Save subtitles to key-value store",
+            "type": "boolean",
+            "description": "If set to true, the scraper will save the downloaded subtitles to the key-value store. <br><b>Note:</b> <i>Download subtitles</i> must be turned on for this option to work."
+          },
+          "subtitlesLanguage": {
+            "title": "Subtitle language",
+            "enum": [
+              "any",
+              "en",
+              "de",
+              "es",
+              "fr",
+              "it",
+              "ja",
+              "ko",
+              "nl",
+              "pt",
+              "ru"
+            ],
+            "type": "string",
+            "description": "Language to download subtitles in.<br><b>Note:</b> <i>Download subtitles</i> must be turned on for this option to work.",
+            "default": "en"
+          },
+          "preferAutoGeneratedSubtitles": {
+            "title": "Prefer automatically generated subtitles.",
+            "type": "boolean",
+            "description": "If set to true, automatically generated subtitles are preferred to user subtitles.<b> Note:</b> A subtitle language must be selected and download subtitles must be turned on for this option to work."
+          },
+          "subtitlesFormat": {
+            "title": "Subtitle format",
+            "enum": [
+              "srt",
+              "vtt",
+              "xml",
+              "plaintext"
+            ],
+            "type": "string",
+            "description": "Select in what format you want to download subtitles",
+            "default": "srt"
+          },
+          "sortingOrder": {
+            "title": "Sorting order",
+            "enum": [
+              "relevance",
+              "rating",
+              "date",
+              "views"
+            ],
+            "type": "string",
+            "description": "Select Youtube sorting parameter for search"
+          },
+          "dateFilter": {
+            "title": "Date filter",
+            "enum": [
+              "hour",
+              "today",
+              "week",
+              "month",
+              "year"
+            ],
+            "type": "string",
+            "description": "Select Youtube upload date filter for search"
+          },
+          "videoType": {
+            "title": "Video type filter",
+            "enum": [
+              "video",
+              "movie"
+            ],
+            "type": "string",
+            "description": "Select Youtube video type filter for search"
+          },
+          "lengthFilter": {
+            "title": "Length filter",
+            "enum": [
+              "under4",
+              "between420",
+              "plus20"
+            ],
+            "type": "string",
+            "description": "Select Youtube video length filter for search"
+          },
+          "isHD": {
+            "title": "HD",
+            "type": "boolean",
+            "description": "Will apply the HD filter for search"
+          },
+          "hasSubtitles": {
+            "title": "Subtitles/CC",
+            "type": "boolean",
+            "description": "Will apply the Subtitles/CC filter for search"
+          },
+          "hasCC": {
+            "title": "Creative Commons",
+            "type": "boolean",
+            "description": "Will apply the Creative Commons filter for search"
+          },
+          "is3D": {
+            "title": "3D",
+            "type": "boolean",
+            "description": "Will apply the 3D filter for search"
+          },
+          "isLive": {
+            "title": "Live",
+            "type": "boolean",
+            "description": "Will apply the Live filter for search"
+          },
+          "isBought": {
+            "title": "Purchased",
+            "type": "boolean",
+            "description": "Will apply the Purchased filter for search"
+          },
+          "is4K": {
+            "title": "4K",
+            "type": "boolean",
+            "description": "Will apply the 4K filter for search"
+          },
+          "is360": {
+            "title": "360 degrees",
+            "type": "boolean",
+            "description": "Will apply the 360 degrees filter for search"
+          },
+          "hasLocation": {
+            "title": "Location",
+            "type": "boolean",
+            "description": "Will apply the Location filter for search"
+          },
+          "isHDR": {
+            "title": "HDR",
+            "type": "boolean",
+            "description": "Will apply the HDR filter for search"
+          },
+          "isVR180": {
+            "title": "VR180",
+            "type": "boolean",
+            "description": "Will apply the VR180 filter for search"
+          },
+          "oldestPostDate": {
+            "title": "Scrape videos published after [date]",
+            "pattern": "^(\\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])(T[0-2]\\d:[0-5]\\d(:[0-5]\\d)?(\\.\\d+)?Z?)?$|^(\\d+)\\s*(minute|hour|day|week|month|year)s?$",
+            "type": "string",
+            "description": "Only posts uploaded after or on this date will be scraped. Alternatively, specify how old the scraped videos should be in days. Putting <code>1 day</code> will get you only today's posts, <code>2 days</code> - yesterday's and today's, and so on. Note, that if you select this, sorting parameter will be auto-reset to NEWEST"
+          },
+          "sortVideosBy": {
+            "title": "Sort by",
+            "enum": [
+              "NEWEST",
+              "POPULAR",
+              "OLDEST"
+            ],
+            "type": "string",
+            "description": "Maps to the sorting buttons on the top of the channel's 'Videos', 'Shorts' and 'Live' pages."
+          }
+        }
+      },
+      "runsResponseSchema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "actId": {
+                "type": "string"
+              },
+              "userId": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "string",
+                "format": "date-time",
+                "example": "2025-01-08T00:00:00.000Z"
+              },
+              "finishedAt": {
+                "type": "string",
+                "format": "date-time",
+                "example": "2025-01-08T00:00:00.000Z"
+              },
+              "status": {
+                "type": "string",
+                "example": "READY"
+              },
+              "meta": {
+                "type": "object",
+                "properties": {
+                  "origin": {
+                    "type": "string",
+                    "example": "API"
+                  },
+                  "userAgent": {
+                    "type": "string"
+                  }
+                }
+              },
+              "stats": {
+                "type": "object",
+                "properties": {
+                  "inputBodyLen": {
+                    "type": "integer",
+                    "example": 2000
+                  },
+                  "rebootCount": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "restartCount": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "resurrectCount": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "computeUnits": {
+                    "type": "integer",
+                    "example": 0
+                  }
+                }
+              },
+              "options": {
+                "type": "object",
+                "properties": {
+                  "build": {
+                    "type": "string",
+                    "example": "latest"
+                  },
+                  "timeoutSecs": {
+                    "type": "integer",
+                    "example": 300
+                  },
+                  "memoryMbytes": {
+                    "type": "integer",
+                    "example": 1024
+                  },
+                  "diskMbytes": {
+                    "type": "integer",
+                    "example": 2048
+                  }
+                }
+              },
+              "buildId": {
+                "type": "string"
+              },
+              "defaultKeyValueStoreId": {
+                "type": "string"
+              },
+              "defaultDatasetId": {
+                "type": "string"
+              },
+              "defaultRequestQueueId": {
+                "type": "string"
+              },
+              "buildNumber": {
+                "type": "string",
+                "example": "1.0.0"
+              },
+              "containerUrl": {
+                "type": "string"
+              },
+              "usage": {
+                "type": "object",
+                "properties": {
+                  "ACTOR_COMPUTE_UNITS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "DATASET_READS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "DATASET_WRITES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "KEY_VALUE_STORE_READS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "KEY_VALUE_STORE_WRITES": {
+                    "type": "integer",
+                    "example": 1
+                  },
+                  "KEY_VALUE_STORE_LISTS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "REQUEST_QUEUE_READS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "REQUEST_QUEUE_WRITES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "DATA_TRANSFER_INTERNAL_GBYTES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "DATA_TRANSFER_EXTERNAL_GBYTES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "PROXY_RESIDENTIAL_TRANSFER_GBYTES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "PROXY_SERPS": {
+                    "type": "integer",
+                    "example": 0
+                  }
+                }
+              },
+              "usageTotalUsd": {
+                "type": "number",
+                "example": 0.00005
+              },
+              "usageUsd": {
+                "type": "object",
+                "properties": {
+                  "ACTOR_COMPUTE_UNITS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "DATASET_READS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "DATASET_WRITES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "KEY_VALUE_STORE_READS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "KEY_VALUE_STORE_WRITES": {
+                    "type": "number",
+                    "example": 0.00005
+                  },
+                  "KEY_VALUE_STORE_LISTS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "REQUEST_QUEUE_READS": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "REQUEST_QUEUE_WRITES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "DATA_TRANSFER_INTERNAL_GBYTES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "DATA_TRANSFER_EXTERNAL_GBYTES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "PROXY_RESIDENTIAL_TRANSFER_GBYTES": {
+                    "type": "integer",
+                    "example": 0
+                  },
+                  "PROXY_SERPS": {
+                    "type": "integer",
+                    "example": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
