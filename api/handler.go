@@ -18,7 +18,7 @@ type Handler struct {
 func (h *Handler) ShowIndex(c echo.Context) error {
 	html := `
 <!DOCTYPE html>
-<html lang="pl">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -36,18 +36,18 @@ func (h *Handler) ShowIndex(c echo.Context) error {
     </style>
 </head>
 <body>
-    <h1>Import Przepisów AI</h1>
+    <h1>Recipe Importer AI</h1>
     <div class="form-group">
-        <label for="space">Wybierz Space (Tandoor):</label>
+        <label for="space">Select Tandoor Space:</label>
         <select id="space">
-            <option value="">Ładowanie...</option>
+            <option value="">Loading...</option>
         </select>
     </div>
     <div class="form-group">
-        <label for="url">Link do przepisu lub profilu:</label>
+        <label for="url">Recipe or Profile URL:</label>
         <input type="text" id="url" placeholder="https://www.instagram.com/p/..." required>
     </div>
-    <button id="importBtn">Importuj Przepis</button>
+    <button id="importBtn">Import Recipe</button>
 
     <div id="status"></div>
 
@@ -70,32 +70,32 @@ func (h *Handler) ShowIndex(c echo.Context) error {
                 });
             })
             .catch(err => {
-                spaceSelect.innerHTML = '<option value="">Błąd ładowania</option>';
+                spaceSelect.innerHTML = '<option value="">Error loading spaces</option>';
             });
 
         importBtn.addEventListener('click', () => {
             const url = urlInput.value;
             const space = spaceSelect.value;
-            if (!url) return alert('Podaj link!');
+            if (!url) return alert('Please provide a URL!');
 
             statusDiv.style.display = 'block';
             statusDiv.className = '';
-            statusDiv.textContent = 'Trwa rozpoczynanie importu...';
+            statusDiv.textContent = 'Starting import...';
             importBtn.disabled = true;
 
             fetch('/import?url=' + encodeURIComponent(url) + '&space=' + space)
                 .then(res => {
                     if (res.status === 202) {
                         statusDiv.className = 'success';
-                        statusDiv.textContent = 'Import został zlecony i odbywa się w tle. Sprawdź Tandoor za chwilę.';
+                        statusDiv.textContent = 'Import task submitted! It is running in the background. Check Tandoor in a moment.';
                         urlInput.value = '';
                     } else {
-                        throw new Error('Błąd serwera');
+                        throw new Error('Server error');
                     }
                 })
                 .catch(err => {
                     statusDiv.className = 'error';
-                    statusDiv.textContent = 'Wystąpił błąd podczas zlecania importu.';
+                    statusDiv.textContent = 'An error occurred while scheduling the import.';
                 })
                 .finally(() => {
                     importBtn.disabled = false;
@@ -159,7 +159,6 @@ func (h *Handler) ProcessURL(url string, spaceID string, cid string) {
 func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, cid string) {
 	ctx := context.Background()
 	
-	// 2. Process with Gemini
 	recipe, err := h.Gemini.ProcessRecipe(ctx, item.Text, cid)
 	if err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Gemini stage for %s: %v", item.URL, err), "ERROR")
@@ -173,7 +172,6 @@ func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, 
 	recipe.SourceURL = item.URL
 	recipe.ImageURL = item.ImageURL
 
-	// 3. Save to Tandoor
 	if err := h.Tandoor.SaveRecipe(recipe, spaceID, cid); err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Tandoor stage for %s: %v", item.URL, err), "ERROR")
 		return

@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// Proste testy rozpoznawania URL
+// URL Recognition tests
 func TestURLRecognition(t *testing.T) {
 	apify := services.NewApifyService()
 
@@ -53,12 +53,12 @@ func TestInstagramProfileRecognition(t *testing.T) {
 	}
 }
 
-// Prosty test integracyjny wymagający uzupełnionego .env
+// Integration test requiring .env
 func TestFullImportFlow(t *testing.T) {
 	_ = godotenv.Load("../.env")
 
 	if os.Getenv("APIFY_KEY") == "" || os.Getenv("TANDOOR_URL") == "" {
-		t.Skip("Pomiń test integracyjny: brak kluczy w pliku .env")
+		t.Skip("Skipping integration test: Missing keys in .env")
 	}
 
 	e := echo.New()
@@ -70,7 +70,7 @@ func TestFullImportFlow(t *testing.T) {
 	apify := services.NewApifyService()
 	gemini, err := services.NewGeminiService(context.Background())
 	if err != nil {
-		t.Fatalf("Błąd inicjalizacji Gemini: %v", err)
+		t.Fatalf("Gemini initialization error: %v", err)
 	}
 	tandoor := services.NewTandoorService()
 
@@ -97,7 +97,7 @@ func TestFullImportFlow(t *testing.T) {
 			recipe.SourceURL = testURL
 			recipe.ImageURL = item.ImageURL
 
-			// 3. Save to Tandoor (using empty space for test)
+			// 3. Save to Tandoor
 			if err := h.Tandoor.SaveRecipe(recipe, "", "test-cid"); err != nil {
 				t.Fatalf("Tandoor error: %v", err)
 			}
