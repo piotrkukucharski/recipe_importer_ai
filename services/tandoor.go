@@ -402,6 +402,28 @@ func (s *TandoorService) getOrCreateKeyword(name string, spaceID string, token s
     return int(res["id"].(float64)), nil
 }
 
+func (s *TandoorService) DeleteRecipe(recipeID string, token string, correlationID string) error {
+	LogJSON(correlationID, "Tandoor", fmt.Sprintf("Requesting deletion of recipe ID: %s", recipeID), "INFO")
+	
+	path := fmt.Sprintf("/api/recipe/%s/", recipeID)
+	req, _ := http.NewRequest("DELETE", s.BaseURL+path, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to delete recipe %s: %s", recipeID, string(bodyBytes))
+	}
+
+	LogJSON(correlationID, "Tandoor", fmt.Sprintf("Recipe %s successfully deleted", recipeID), "INFO")
+	return nil
+}
+
 func stringsEqual(a, b string) bool {
 	return url.QueryEscape(a) == url.QueryEscape(b)
 }

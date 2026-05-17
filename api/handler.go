@@ -509,6 +509,21 @@ func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, 
     }
 }
 
+func (h *Handler) DeleteRecipe(c echo.Context) error {
+	recipeID := c.Param("id")
+	token := h.getToken(c)
+	if token == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+	}
+
+	correlationID := c.Request().Header.Get("X-Correlation-ID")
+	if err := h.Tandoor.DeleteRecipe(recipeID, token, correlationID); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Recipe deleted"})
+}
+
 func (h *Handler) ShowImportProgress(c echo.Context) error {
     cid := c.Param("CorrelationID")
     tandoorURL := os.Getenv("TANDOOR_URL")
@@ -549,6 +564,8 @@ func (h *Handler) ShowImportProgress(c echo.Context) error {
         .btn-primary:hover { background: #218838; }
         .btn-secondary { background: #6c757d; color: white; }
         .btn-secondary:hover { background: #5a6268; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-danger:hover { background: #c82333; }
     </style>
 </head>
 <body>
@@ -557,6 +574,7 @@ func (h *Handler) ShowImportProgress(c echo.Context) error {
             <div id="recipe-data"></div>
             <div class="actions">
                 <a id="viewBtn" class="btn btn-primary" target="_blank">View in Tandoor</a>
+                <button id="deleteBtn" class="btn btn-danger">Delete & Return</button>
                 <a href="/" class="btn btn-secondary">Import Another</a>
             </div>
         </div>
@@ -572,6 +590,7 @@ func (h *Handler) ShowImportProgress(c echo.Context) error {
         const recipePreview = document.getElementById('recipe-preview');
         const recipeData = document.getElementById('recipe-data');
         const viewBtn = document.getElementById('viewBtn');
+        const deleteBtn = document.getElementById('deleteBtn');
         const cid = "` + cid + `";
         const tandoorURL = "` + tandoorURL + `";
 
@@ -635,6 +654,24 @@ func (h *Handler) ShowImportProgress(c echo.Context) error {
                 '</div>';
 
             viewBtn.href = tandoorURL + '/recipe/' + recipe.id;
+
+            deleteBtn.onclick = () => {
+                if (!confirm('Are you sure you want to delete this recipe?')) return;
+                
+                deleteBtn.disabled = true;
+                deleteBtn.textContent = 'Deleting...';
+                
+                fetch('/api/recipe/' + recipe.id, { method: 'DELETE' })
+                    .then(res => {
+                        if (res.ok) {
+                            window.location.href = '/';
+                        } else {
+                            alert('Failed to delete recipe.');
+                            deleteBtn.disabled = false;
+                            deleteBtn.textContent = 'Delete & Return';
+                        }
+                    });
+            };
         }
 
         const logSource = new EventSource('/api/logs/' + cid);

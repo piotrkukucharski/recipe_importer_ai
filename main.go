@@ -123,6 +123,7 @@ func runServer(h *api.Handler) {
 	// API
 	e.GET("/import", h.ImportRecipe)
     e.GET("/import/:CorrelationID", h.ShowImportProgress)
+    e.DELETE("/api/recipe/:id", h.DeleteRecipe)
 
 	port := os.Getenv("PORT")
 	if port == "" {
