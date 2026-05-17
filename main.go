@@ -38,12 +38,17 @@ func main() {
 		os.Exit(1)
 	}
 	tandoor := services.NewTandoorService()
+	transcription, err := services.NewTranscriptionService(ctx)
+	if err != nil {
+		services.LogJSON("system", "Main", fmt.Sprintf("Transcription service initialization skipped: %v", err), "WARN")
+	}
 
 	// Initialize handler/processor
 	h := &api.Handler{
-		Apify:   apify,
-		Gemini:  gemini,
-		Tandoor: tandoor,
+		Apify:         apify,
+		Gemini:        gemini,
+		Tandoor:       tandoor,
+		Transcription: transcription,
 	}
 
 	// CLI Batch Mode

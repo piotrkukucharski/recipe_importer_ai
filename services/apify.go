@@ -15,9 +15,11 @@ type ApifyService struct {
 }
 
 type ScrapedItem struct {
-	Text     string
-	ImageURL string
-	URL      string
+	Text       string
+	ImageURL   string
+	URL        string
+	VideoURL   string
+	Transcript string
 }
 
 func NewApifyService() *ApifyService {
@@ -92,6 +94,16 @@ func (s *ApifyService) ScrapeItems(url string, correlationID string) ([]ScrapedI
 			item.URL = u
 		} else if shortCode, ok := res["shortCode"].(string); ok {
 			item.URL = "https://www.instagram.com/p/" + shortCode + "/"
+		}
+
+		// Video URL extraction
+		if v, ok := res["videoUrl"].(string); ok {
+			item.VideoURL = v
+		}
+
+		// Native Transcript extraction (YouTube)
+		if t, ok := res["transcript"].(string); ok {
+			item.Transcript = t
 		}
 
 		// Text extraction

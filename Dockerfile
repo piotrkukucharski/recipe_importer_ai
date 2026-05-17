@@ -19,8 +19,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o recipe_importer_ai main.go
 # Etap 2: Finalny obraz
 FROM alpine:latest
 
-# Instalacja certyfikatów CA (wymagane do połączeń HTTPS z API)
-RUN apk --no-cache add ca-certificates
+# Instalacja certyfikatów CA oraz ffmpeg
+RUN apk --no-cache add ca-certificates ffmpeg
 
 WORKDIR /root/
 
