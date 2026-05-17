@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"recipe_importer_ai/services"
 	"time"
 
@@ -510,6 +511,7 @@ func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, 
 
 func (h *Handler) ShowImportProgress(c echo.Context) error {
     cid := c.Param("CorrelationID")
+    tandoorURL := os.Getenv("TANDOOR_URL")
     html := `
 <!DOCTYPE html>
 <html lang="en">
@@ -542,7 +544,7 @@ func (h *Handler) ShowImportProgress(c echo.Context) error {
         .steps ol { padding-left: 20px; }
         
         .actions { margin-top: 20px; display: flex; gap: 10px; }
-        button { border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background 0.3s; }
+        .btn { text-decoration: none; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background 0.3s; display: inline-block; text-align: center; }
         .btn-primary { background: #28a745; color: white; }
         .btn-primary:hover { background: #218838; }
         .btn-secondary { background: #6c757d; color: white; }
@@ -554,8 +556,8 @@ func (h *Handler) ShowImportProgress(c echo.Context) error {
         <div id="recipe-preview">
             <div id="recipe-data"></div>
             <div class="actions">
-                <button id="viewBtn" class="btn-primary">View in Tandoor</button>
-                <button onclick="window.location.href='/'" class="btn-secondary">Import Another</button>
+                <a id="viewBtn" class="btn btn-primary" target="_blank">View in Tandoor</a>
+                <a href="/" class="btn btn-secondary">Import Another</a>
             </div>
         </div>
 
@@ -571,6 +573,7 @@ func (h *Handler) ShowImportProgress(c echo.Context) error {
         const recipeData = document.getElementById('recipe-data');
         const viewBtn = document.getElementById('viewBtn');
         const cid = "` + cid + `";
+        const tandoorURL = "` + tandoorURL + `";
 
         function addLog(entry) {
             const div = document.createElement('div');
@@ -608,8 +611,10 @@ func (h *Handler) ShowImportProgress(c echo.Context) error {
                 });
             }
 
+            const imageSrc = recipe.image ? (recipe.image.startsWith('http') ? recipe.image : tandoorURL + recipe.image) : '';
+
             recipeData.innerHTML = '<div class="recipe-header">' +
-                    '<img src="' + (recipe.image_url || '') + '" class="recipe-image" alt="Recipe Image">' +
+                    '<img src="' + imageSrc + '" class="recipe-image" alt="Recipe Image">' +
                     '<div class="recipe-info">' +
                         '<h2>' + recipe.name + '</h2>' +
                         '<div class="recipe-meta">' +
@@ -629,11 +634,7 @@ func (h *Handler) ShowImportProgress(c echo.Context) error {
                     '</div>' +
                 '</div>';
 
-            viewBtn.onclick = () => {
-                // We assume Tandoor URL from current host or config
-                // In a real scenario, you'd want the full Tandoor URL here
-                window.open('/api/recipe/' + recipe.id + '/', '_blank');
-            };
+            viewBtn.href = tandoorURL + '/view/recipe/' + recipe.id;
         }
 
         const logSource = new EventSource('/api/logs/' + cid);
