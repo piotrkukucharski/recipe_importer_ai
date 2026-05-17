@@ -348,7 +348,7 @@ func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, 
 		}
 	}
 
-	recipe, err := h.Gemini.ProcessRecipe(ctx, fullText, lang, cid)
+	recipe, err := h.Gemini.ProcessRecipe(ctx, fullText, item.Images, lang, cid)
 	if err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Gemini stage for %s: %v", item.URL, err), "ERROR")
 		return
@@ -359,7 +359,11 @@ func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, 
 	}
 
 	recipe.SourceURL = item.URL
-	recipe.ImageURL = item.ImageURL
+    // If AI picked an image, it's already in recipe.ImageURL
+    // If it didn't pick anything, we fall back to the first one found by scraper if available
+    if recipe.ImageURL == "" && item.ImageURL != "" {
+        recipe.ImageURL = item.ImageURL
+    }
 
 	if err := h.Tandoor.SaveRecipe(recipe, spaceID, token, cid); err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Tandoor stage for %s: %v", item.URL, err), "ERROR")

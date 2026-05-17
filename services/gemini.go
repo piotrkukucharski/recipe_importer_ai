@@ -25,7 +25,7 @@ func NewGeminiService(ctx context.Context) (*GeminiService, error) {
 	return &GeminiService{Client: client}, nil
 }
 
-func (s *GeminiService) ProcessRecipe(ctx context.Context, text string, targetLanguage string, correlationID string) (*models.Recipe, error) {
+func (s *GeminiService) ProcessRecipe(ctx context.Context, text string, imageURLs []string, targetLanguage string, correlationID string) (*models.Recipe, error) {
 	LogJSON(correlationID, "Gemini", fmt.Sprintf("Starting AI processing of extracted text (Target Language: %s)", targetLanguage), "INFO")
 	model := s.Client.GenerativeModel("gemini-3-flash-preview")
 	
@@ -36,12 +36,23 @@ func (s *GeminiService) ProcessRecipe(ctx context.Context, text string, targetLa
 		targetLanguage = "Polish"
 	}
 
+    imagesList := strings.Join(imageURLs, "\n")
+
 	prompt := fmt.Sprintf(`
 Process the following text and extract a culinary recipe from it.
 
 If the text does NOT contain a recipe (e.g., it is a regular post, advertisement, travel info), return an empty JSON object: {}
 
 IMPORTANT: The entire recipe, including its name, description, step names, instructions, and ingredient names/notes MUST be in the following language: %s. If the source text is in a different language, translate it accurately to %s.
+
+IMAGE SELECTION:
+Below is a list of image URLs found on the page. Analyze their filenames and paths. 
+Pick ONE URL that most likely represents the FINAL dish (the finished meal). 
+Prioritize images that:
+1. Look like a main photo of the dish.
+2. Have higher resolution (judging by filename/path if possible).
+3. Are NOT icons, logos, avatars, or step-by-step photos.
+If you find a suitable image, put its URL in the "image_url" field. If none fit well, leave it empty.
 
 Add keywords (tags) to the recipe. Choose appropriate ones from the list below or add your own if they fit (translate them to %s as well):
 vegan, vegetarian, for breakfast, for dinner, for lunch, snacks, for grill, coffee, drink, tea, smoothie, Polish cuisine, Japanese cuisine, Korean cuisine, Chinese cuisine, Sichuan cuisine, alcoholic drink, non-alcoholic drink, pancakes, cakes, soup, cream soup, bread, Italian cuisine, pasta, cheesecake, cake, salad.
@@ -50,6 +61,7 @@ Return the result as a strictly formatted JSON object (not an array!) matching t
 {
   "name": "Recipe Name (in %s)",
   "description": "Short description (in %s)",
+  "image_url": "the selected best image URL from the list provided below",
   "working_time": preparation time in minutes (int),
   "waiting_time": waiting time in minutes (int),
   "servings": number of servings (int),
@@ -70,12 +82,12 @@ Return the result as a strictly formatted JSON object (not an array!) matching t
   ]
 }
 
-Important: Divide the recipe into logical steps. Each step must have the ingredients assigned that are used in it.
-If there is no unit in the text, use an empty string. If there is no amount, use 0. If there is no servings info, use 1.
+Potential Image URLs:
+%s
 
 Text to process:
 %s
-`, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, text)
+`, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, imagesList, text)
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {

@@ -16,7 +16,8 @@ type ApifyService struct {
 
 type ScrapedItem struct {
 	Text       string
-	ImageURL   string
+	ImageURL   string   // This will be the AI-selected image
+	Images     []string // All potential images
 	URL        string
 	VideoURL   string
 	Transcript string
@@ -28,19 +29,16 @@ func NewApifyService() *ApifyService {
 	}
 }
 
-func (s *ApifyService) Scrape(url string, correlationID string) (string, string, error) {
+func (s *ApifyService) Scrape(url string, correlationID string) (string, string, []string, error) {
 	items, err := s.ScrapeItems(url, correlationID)
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	if len(items) == 0 {
-		return "", "", fmt.Errorf("no content found at URL")
+		return "", "", nil, fmt.Errorf("no content found at URL")
 	}
 	
-	// For backward compatibility/single URL, we return the first item or merged content
-    // But since we want to handle profiles, we should probably use ScrapeItems in the handler.
-    // For now, let's just return the first one if it's a single post.
-	return items[0].Text, items[0].ImageURL, nil
+	return items[0].Text, items[0].ImageURL, items[0].Images, nil
 }
 
 func (s *ApifyService) ScrapeItems(url string, correlationID string) ([]ScrapedItem, error) {
@@ -80,23 +78,11 @@ func (s *ApifyService) ScrapeItems(url string, correlationID string) ([]ScrapedI
 	for _, res := range results {
 		item := ScrapedItem{}
 		
-		// Image extraction
-		if img, ok := res["displayUrl"].(string); ok && img != "" {
-			item.ImageURL = img
-		} else if img, ok := res["thumbnailUrl"].(string); ok && img != "" {
-			item.ImageURL = img
-		} else if img, ok := res["imageUrl"].(string); ok && img != "" {
-			item.ImageURL = img
-		} else if img, ok := res["topImage"].(string); ok && img != "" {
-			item.ImageURL = img
-		} else if img, ok := res["image"].(string); ok && img != "" {
-			item.ImageURL = img
-		} else if img, ok := res["mainImage"].(string); ok && img != "" {
-			item.ImageURL = img
-		} else {
-            // Recursive search for common image keys
-            item.ImageURL = s.findImageInMap(res)
-        }
+		// Image extraction - collect ALL
+		item.Images = s.findAllImages(res)
+		if len(item.Images) > 0 {
+			item.ImageURL = item.Images[0]
+		}
 
 		// URL extraction (for individual posts in profile)
 		if u, ok := res["url"].(string); ok {
@@ -171,39 +157,57 @@ func (s *ApifyService) GetActorAndInput(url string) (string, map[string]interfac
 	return "apify~website-content-crawler", map[string]interface{}{"startUrls": []map[string]string{{"url": url}}}
 }
 
-func (s *ApifyService) findImageInMap(m map[string]interface{}) string {
-    // Priority keys
-    priorityKeys := []string{"ogImage", "twitterImage", "topImage", "imageUrl", "thumbnailUrl", "displayUrl", "image", "mainImage"}
-    for _, key := range priorityKeys {
-        if val, ok := m[key]; ok {
-            if s, ok := val.(string); ok && s != "" && strings.HasPrefix(s, "http") {
-                return s
-            }
-        }
-    }
+func (s *ApifyService) findAllImages(res map[string]interface{}) []string {
+	var images []string
+	seen := make(map[string]bool)
 
-    // Recursively search in sub-maps and arrays
-    for _, val := range m {
-        switch v := val.(type) {
-        case map[string]interface{}:
-            if img := s.findImageInMap(v); img != "" {
-                return img
-            }
-        case []interface{}:
-            for _, item := range v {
-                if subMap, ok := item.(map[string]interface{}); ok {
-                    if img := s.findImageInMap(subMap); img != "" {
-                        return img
-                    }
-                } else if s, ok := item.(string); ok && strings.HasPrefix(s, "http") {
-                    if strings.Contains(s, ".jpg") || strings.Contains(s, ".png") || strings.Contains(s, ".webp") || strings.Contains(s, ".jpeg") {
-                        return s
-                    }
-                }
-            }
-        }
-    }
-    return ""
+	// High priority keys
+	priorityKeys := []string{"displayUrl", "thumbnailUrl", "imageUrl", "topImage", "image", "mainImage", "ogImage"}
+	for _, key := range priorityKeys {
+		if val, ok := res[key].(string); ok && val != "" && strings.HasPrefix(val, "http") {
+			if !seen[val] {
+				images = append(images, val)
+				seen[val] = true
+			}
+		}
+	}
+
+	// Recursive search
+	recursiveImgs := s.collectImagesFromMap(res)
+	for _, img := range recursiveImgs {
+		if !seen[img] {
+			images = append(images, img)
+			seen[img] = true
+		}
+	}
+
+	return images
+}
+
+func (s *ApifyService) collectImagesFromMap(m map[string]interface{}) []string {
+	var images []string
+	
+	for _, val := range m {
+		switch v := val.(type) {
+		case string:
+			if strings.HasPrefix(v, "http") && (strings.Contains(v, ".jpg") || strings.Contains(v, ".png") || strings.Contains(v, ".webp") || strings.Contains(v, ".jpeg")) {
+				images = append(images, v)
+			}
+		case map[string]interface{}:
+			images = append(images, s.collectImagesFromMap(v)...)
+		case []interface{}:
+			for _, item := range v {
+				if subMap, ok := item.(map[string]interface{}); ok {
+					images = append(images, s.collectImagesFromMap(subMap)...)
+				} else if s, ok := item.(string); ok && strings.HasPrefix(s, "http") {
+					if strings.Contains(s, ".jpg") || strings.Contains(s, ".png") || strings.Contains(s, ".webp") || strings.Contains(s, ".jpeg") {
+						images = append(images, s)
+					}
+				}
+			}
+		}
+	}
+	return images
 }
 
 func (s *ApifyService) IsInstagramProfile(url string) bool {
