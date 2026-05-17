@@ -170,7 +170,10 @@ func (s *ApifyService) GetActorAndInput(url string) (string, map[string]interfac
 		return "apify~facebook-pages-scraper", map[string]interface{}{"startUrls": []map[string]string{{"url": url}}}
 	}
 
-	return "apify~website-content-crawler", map[string]interface{}{"startUrls": []map[string]string{{"url": url}}}
+	return "apify~website-content-crawler", map[string]interface{}{
+		"startUrls":      []map[string]string{{"url": url}},
+		"maxCrawlDepth":  0,
+	}
 }
 
 func (s *ApifyService) findAllImages(res map[string]interface{}) []string {
