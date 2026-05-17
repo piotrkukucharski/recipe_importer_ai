@@ -116,6 +116,7 @@ func runServer(h *api.Handler) {
     e.GET("/", h.ShowIndex)
     e.GET("/api/spaces", h.GetSpaces)
     e.POST("/api/login", h.Login)
+    e.POST("/api/logout", h.Logout)
 
 	// API
 	e.GET("/import", h.ImportRecipe)

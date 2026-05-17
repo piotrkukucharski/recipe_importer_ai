@@ -50,6 +50,17 @@ func (h *Handler) Login(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"message": "Login successful"})
 }
 
+func (h *Handler) Logout(c echo.Context) error {
+	cookie := new(http.Cookie)
+	cookie.Name = "tandoor_token"
+	cookie.Value = ""
+	cookie.Expires = time.Now().Add(-1 * time.Hour)
+	cookie.Path = "/"
+	cookie.HttpOnly = true
+	c.SetCookie(cookie)
+	return c.JSON(http.StatusOK, map[string]string{"message": "Logged out"})
+}
+
 func (h *Handler) ShowIndex(c echo.Context) error {
 	html := `
 <!DOCTYPE html>
@@ -59,68 +70,83 @@ func (h *Handler) ShowIndex(c echo.Context) error {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Recipe Importer AI</title>
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; line-height: 1.6; }
+        body { font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; line-height: 1.6; background: #f4f7f6; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { margin-top: 0; color: #333; }
         .form-group { margin-bottom: 20px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; }
-        select, input[type="text"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { background: #28a745; color: white; border: none; padding: 12px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
+        select, input[type="text"], input[type="password"] { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 14px; }
+        button { background: #28a745; color: white; border: none; padding: 12px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%; transition: background 0.3s; }
         button:hover { background: #218838; }
+        button.secondary { background: #6c757d; margin-top: 10px; }
+        button.secondary:hover { background: #5a6268; }
         #status { margin-top: 20px; padding: 15px; border-radius: 4px; display: none; }
         .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        #login-form { border: 1px solid #ddd; padding: 20px; border-radius: 8px; margin-bottom: 30px; background: #f9f9f9; }
+        #login-form { display: block; }
         #main-app { display: none; }
+        nav { display: none; justify-content: flex-end; margin-bottom: 20px; }
+        .logout-btn { background: #dc3545; width: auto; padding: 8px 15px; font-size: 14px; }
+        .logout-btn:hover { background: #c82333; }
     </style>
 </head>
 <body>
-    <h1>Recipe Importer AI</h1>
+    <nav id="navbar">
+        <button id="logoutBtnTop" class="logout-btn">Logout</button>
+    </nav>
 
-    <div id="login-form">
-        <h3>Login with Tandoor Credentials</h3>
-        <div class="form-group">
-            <label for="username">Email/Username:</label>
-            <input type="text" id="username" required>
+    <div class="container">
+        <h1>Recipe Importer AI</h1>
+
+        <div id="login-form">
+            <h3>Login with Tandoor Credentials</h3>
+            <div class="form-group">
+                <label for="username">Email/Username:</label>
+                <input type="text" id="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" required>
+            </div>
+            <button id="loginBtn">Login</button>
         </div>
-        <div class="form-group">
-            <label for="password">Password:</label>
-            <input type="password" id="password" required>
+
+        <div id="main-app">
+            <div class="form-group">
+                <label for="space">Select Tandoor Space:</label>
+                <select id="space">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="lang">Target Language:</label>
+                <select id="lang">
+                    <option value="Polish">Polish</option>
+                    <option value="English">English</option>
+                    <option value="German">German</option>
+                    <option value="French">French</option>
+                    <option value="Spanish">Spanish</option>
+                    <option value="Italian">Italian</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="url">Recipe or Profile URL:</label>
+                <input type="text" id="url" placeholder="https://www.instagram.com/p/..." required>
+            </div>
+            <button id="importBtn">Import Recipe</button>
         </div>
-        <button id="loginBtn">Login</button>
+
+        <div id="status"></div>
     </div>
-
-    <div id="main-app">
-        <div class="form-group">
-            <label for="space">Select Tandoor Space:</label>
-            <select id="space">
-                <option value="">Loading...</option>
-            </select>
-        </div>
-        <div class="form-group">
-            <label for="lang">Target Language:</label>
-            <select id="lang">
-                <option value="Polish">Polish</option>
-                <option value="English">English</option>
-                <option value="German">German</option>
-                <option value="French">French</option>
-                <option value="Spanish">Spanish</option>
-                <option value="Italian">Italian</option>
-            </select>
-        </div>
-        <div class="form-group">
-            <label for="url">Recipe or Profile URL:</label>
-            <input type="text" id="url" placeholder="https://www.instagram.com/p/..." required>
-        </div>
-        <button id="importBtn">Import Recipe</button>
-    </div>
-
-    <div id="status"></div>
 
     <script>
         const loginForm = document.getElementById('login-form');
         const mainApp = document.getElementById('main-app');
+        const navbar = document.getElementById('navbar');
         const usernameInput = document.getElementById('username');
         const passwordInput = document.getElementById('password');
         const loginBtn = document.getElementById('loginBtn');
+        const logoutBtn = document.getElementById('logoutBtnTop');
 
         const spaceSelect = document.getElementById('space');
         const langSelect = document.getElementById('lang');
@@ -131,12 +157,15 @@ func (h *Handler) ShowIndex(c echo.Context) error {
         function showApp() {
             loginForm.style.display = 'none';
             mainApp.style.display = 'block';
+            navbar.style.display = 'flex';
             loadSpaces();
         }
 
         function showLogin() {
             loginForm.style.display = 'block';
             mainApp.style.display = 'none';
+            navbar.style.display = 'none';
+            statusDiv.style.display = 'none';
         }
 
         function loadSpaces() {
@@ -182,6 +211,11 @@ func (h *Handler) ShowIndex(c echo.Context) error {
             });
         });
 
+        logoutBtn.addEventListener('click', () => {
+            fetch('/api/logout', { method: 'POST' })
+                .then(() => showLogin());
+        });
+
         // Initial check - if not authorized, show login immediately
         fetch('/api/spaces').then(res => {
             if (res.ok) {
@@ -211,6 +245,7 @@ func (h *Handler) ShowIndex(c echo.Context) error {
                     } else if (res.status === 401) {
                         statusDiv.className = 'error';
                         statusDiv.textContent = 'Session expired. Please refresh and login again.';
+                        showLogin();
                     } else {
                         throw new Error('Server error');
                     }
