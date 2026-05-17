@@ -49,17 +49,21 @@ func (s *GeminiService) EvaluateImage(ctx context.Context, imageURL string, reci
 		return 0, fmt.Errorf("failed to read image data: %w", err)
 	}
 
-    // Determine MIME type
-    contentType := resp.Header.Get("Content-Type")
-    if contentType == "" || !strings.HasPrefix(contentType, "image/") {
-        // Fallback or skip if not an image
-        if strings.Contains(imageURL, ".png") { contentType = "image/png" } else
-        if strings.Contains(imageURL, ".webp") { contentType = "image/webp" } else
-        { contentType = "image/jpeg" }
-    }
+	// Determine MIME type
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" || !strings.HasPrefix(contentType, "image/") {
+		// Fallback or skip if not an image
+		if strings.Contains(imageURL, ".png") {
+			contentType = "image/png"
+		} else if strings.Contains(imageURL, ".webp") {
+			contentType = "image/webp"
+		} else {
+			contentType = "image/jpeg"
+		}
+	}
 
-	model := s.Client.GenerativeModel("gemini-1.5-flash")
-	
+	model := s.Client.GenerativeModel("gemini-3-flash-preview")
+
 	prompt := []genai.Part{
 		genai.ImageData(strings.TrimPrefix(contentType, "image/"), imgData),
 		genai.Text(fmt.Sprintf(`
@@ -100,7 +104,7 @@ Return ONLY the numeric score (e.g. "8"). Do not add any text.
 func (s *GeminiService) ProcessRecipe(ctx context.Context, text string, imageURLs []string, targetLanguage string, correlationID string) (*models.Recipe, error) {
 	LogJSON(correlationID, "Gemini", fmt.Sprintf("Starting AI processing of extracted text (Target Language: %s)", targetLanguage), "INFO")
 	model := s.Client.GenerativeModel("gemini-3-flash-preview")
-	
+
 	// Force JSON output
 	model.ResponseMIMEType = "application/json"
 
@@ -108,7 +112,7 @@ func (s *GeminiService) ProcessRecipe(ctx context.Context, text string, imageURL
 		targetLanguage = "Polish"
 	}
 
-    imagesList := strings.Join(imageURLs, "\n")
+	imagesList := strings.Join(imageURLs, "\n")
 
 	prompt := fmt.Sprintf(`
 Process the following text and extract a culinary recipe from it.
@@ -118,8 +122,8 @@ If the text does NOT contain a recipe (e.g., it is a regular post, advertisement
 IMPORTANT: The entire recipe, including its name, description, step names, instructions, and ingredient names/notes MUST be in the following language: %s. If the source text is in a different language, translate it accurately to %s.
 
 IMAGE SELECTION:
-Below is a list of image URLs found on the page. Analyze their filenames and paths. 
-Pick ONE URL that most likely represents the FINAL dish (the finished meal). 
+Below is a list of image URLs found on the page. Analyze their filenames and paths.
+Pick ONE URL that most likely represents the FINAL dish (the finished meal).
 Prioritize images that:
 1. Look like a main photo of the dish.
 2. Have higher resolution (judging by filename/path if possible).
@@ -200,10 +204,10 @@ Text to process:
 		return nil, fmt.Errorf("failed to unmarshal gemini response: %w, response: %s", err, jsonStr)
 	}
 
-    if recipe.Name == "" {
-        LogJSON(correlationID, "Gemini", "Recipe name is empty, likely not a recipe", "INFO")
-        return nil, nil
-    }
+	if recipe.Name == "" {
+		LogJSON(correlationID, "Gemini", "Recipe name is empty, likely not a recipe", "INFO")
+		return nil, nil
+	}
 
 	LogJSON(correlationID, "Gemini", fmt.Sprintf("Successfully unmarshaled recipe: %s", recipe.Name), "INFO")
 	return &recipe, nil

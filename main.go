@@ -122,6 +122,7 @@ func runServer(h *api.Handler) {
 
 	// API
 	e.GET("/import", h.ImportRecipe)
+    e.GET("/import/:CorrelationID", h.ShowImportProgress)
 
 	port := os.Getenv("PORT")
 	if port == "" {

@@ -350,10 +350,7 @@ func (h *Handler) ShowIndex(c echo.Context) error {
                     }
                 })
                 .then(data => {
-                    statusDiv.className = 'success';
-                    statusDiv.textContent = 'Import task submitted! Check logs below for progress.';
-                    urlInput.value = '';
-                    startLogStream(data.correlation_id);
+                    window.location.href = '/import/' + data.correlation_id;
                 })
                 .catch(err => {
                     if (err.message !== 'Unauthorized') {
@@ -499,10 +496,161 @@ func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, 
         recipe.ImageURL = item.ImageURL
     }
 
-	if err := h.Tandoor.SaveRecipe(recipe, spaceID, token, cid); err != nil {
+	createdRecipe, err := h.Tandoor.SaveRecipe(recipe, spaceID, token, cid)
+	if err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Tandoor stage for %s: %v", item.URL, err), "ERROR")
 		return
 	}
 
-	services.LogJSON(cid, "Background", fmt.Sprintf("Pipeline completed successfully for recipe: %s", recipe.Name), "INFO")
+    if createdRecipe != nil {
+        services.BroadcastRecipe(cid, createdRecipe)
+	    services.LogJSON(cid, "Background", fmt.Sprintf("Pipeline completed successfully for recipe: %s", recipe.Name), "INFO")
+    }
+}
+
+func (h *Handler) ShowImportProgress(c echo.Context) error {
+    cid := c.Param("CorrelationID")
+    html := `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Import Progress - Recipe Importer AI</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; background: #f4f7f6; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { margin-top: 0; color: #333; }
+        #log-container { margin-top: 20px; background: #222; color: #eee; padding: 15px; border-radius: 4px; font-family: monospace; font-size: 12px; height: 250px; overflow-y: auto; }
+        .log-entry { margin-bottom: 4px; border-bottom: 1px solid #333; padding-bottom: 2px; }
+        .log-time { color: #888; margin-right: 8px; }
+        .log-svc { color: #4fc3f7; font-weight: bold; margin-right: 8px; width: 80px; display: inline-block; }
+        .level-ERROR { color: #ff5252; }
+        .level-WARN { color: #ffb74d; }
+        .level-INFO { color: #81c784; }
+        
+        #recipe-preview { display: none; margin-bottom: 30px; border-bottom: 2px solid #eee; padding-bottom: 30px; }
+        .recipe-header { display: flex; gap: 20px; margin-bottom: 20px; }
+        .recipe-image { width: 200px; height: 200px; object-fit: cover; border-radius: 8px; background: #eee; }
+        .recipe-info h2 { margin: 0 0 10px 0; }
+        .recipe-meta { font-size: 14px; color: #666; }
+        .recipe-tags { margin-top: 10px; }
+        .tag { background: #e0e0e0; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin-right: 5px; display: inline-block; }
+        
+        .recipe-content { display: grid; grid-template-columns: 1fr 2fr; gap: 30px; }
+        .ingredients ul { padding-left: 20px; }
+        .steps ol { padding-left: 20px; }
+        
+        .actions { margin-top: 20px; display: flex; gap: 10px; }
+        button { border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background 0.3s; }
+        .btn-primary { background: #28a745; color: white; }
+        .btn-primary:hover { background: #218838; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-secondary:hover { background: #5a6268; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="recipe-preview">
+            <div id="recipe-data"></div>
+            <div class="actions">
+                <button id="viewBtn" class="btn-primary">View in Tandoor</button>
+                <button onclick="window.location.href='/'" class="btn-secondary">Import Another</button>
+            </div>
+        </div>
+
+        <h1>Importing Recipe...</h1>
+        <p>Correlation ID: <code id="cid-val">` + cid + `</code></p>
+        
+        <div id="log-container"></div>
+    </div>
+
+    <script>
+        const logContainer = document.getElementById('log-container');
+        const recipePreview = document.getElementById('recipe-preview');
+        const recipeData = document.getElementById('recipe-data');
+        const viewBtn = document.getElementById('viewBtn');
+        const cid = "` + cid + `";
+
+        function addLog(entry) {
+            const div = document.createElement('div');
+            div.className = 'log-entry';
+            const time = new Date(entry.timestamp).toLocaleTimeString();
+            div.innerHTML = '<span class="log-time">' + time + '</span>' +
+                            '<span class="log-svc">[' + entry.service + ']</span>' +
+                            '<span class="log-msg level-' + entry.level + '">' + entry.message + '</span>';
+            logContainer.appendChild(div);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function renderRecipe(recipe) {
+            recipePreview.style.display = 'block';
+            document.querySelector('h1').textContent = 'Import Complete!';
+            
+            let ingredientsHTML = '<ul>';
+            recipe.steps.forEach(step => {
+                step.ingredients.forEach(ing => {
+                    ingredientsHTML += '<li>' + (ing.amount || '') + ' ' + (ing.unit ? ing.unit.name : '') + ' ' + ing.food.name + '</li>';
+                });
+            });
+            ingredientsHTML += '</ul>';
+
+            let stepsHTML = '<ol>';
+            recipe.steps.forEach(step => {
+                stepsHTML += '<li><strong>' + step.name + '</strong>: ' + step.instruction + '</li>';
+            });
+            stepsHTML += '</ol>';
+
+            let tagsHTML = '';
+            if (recipe.keywords) {
+                recipe.keywords.forEach(kw => {
+                    tagsHTML += '<span class="tag">' + (kw.name || kw) + '</span>';
+                });
+            }
+
+            recipeData.innerHTML = '<div class="recipe-header">' +
+                    '<img src="' + (recipe.image_url || '') + '" class="recipe-image" alt="Recipe Image">' +
+                    '<div class="recipe-info">' +
+                        '<h2>' + recipe.name + '</h2>' +
+                        '<div class="recipe-meta">' +
+                            'Time: ' + (recipe.working_time + recipe.waiting_time) + ' min | Servings: ' + recipe.servings +
+                        '</div>' +
+                        '<div class="recipe-tags">' + tagsHTML + '</div>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="recipe-content">' +
+                    '<div class="ingredients">' +
+                        '<h3>Ingredients</h3>' +
+                        ingredientsHTML +
+                    '</div>' +
+                    '<div class="steps">' +
+                        '<h3>Instructions</h3>' +
+                        stepsHTML +
+                    '</div>' +
+                '</div>';
+
+            viewBtn.onclick = () => {
+                // We assume Tandoor URL from current host or config
+                // In a real scenario, you'd want the full Tandoor URL here
+                window.open('/api/recipe/' + recipe.id + '/', '_blank');
+            };
+        }
+
+        const logSource = new EventSource('/api/logs/' + cid);
+        logSource.onmessage = (e) => {
+            const entry = JSON.parse(e.data);
+            if (entry.type === 'log') {
+                addLog(entry);
+            } else if (entry.type === 'recipe') {
+                renderRecipe(entry.data);
+            }
+        };
+        logSource.onerror = () => {
+            // logSource.close();
+        };
+    </script>
+</body>
+</html>
+    `
+    return c.HTML(http.StatusOK, html)
 }

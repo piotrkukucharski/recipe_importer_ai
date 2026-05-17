@@ -8,11 +8,13 @@ import (
 )
 
 type LogEntry struct {
-	Timestamp     string `json:"timestamp"`
-	CorrelationID string `json:"correlation-id"`
-	Service       string `json:"service"`
-	Message       string `json:"message"`
-	Level         string `json:"level"`
+	Timestamp     string      `json:"timestamp"`
+	CorrelationID string      `json:"correlation-id"`
+	Service       string      `json:"service"`
+	Message       string      `json:"message"`
+	Level         string      `json:"level"`
+	Type          string      `json:"type"` // "log" or "recipe"
+	Data          interface{} `json:"data,omitempty"`
 }
 
 var (
@@ -44,18 +46,33 @@ func LogJSON(correlationID, service, message, level string) {
 		Service:       service,
 		Message:       message,
 		Level:         level,
+		Type:          "log",
 	}
-	b, _ := json.Marshal(entry)
-	fmt.Println(string(b))
+	broadcast(entry)
+}
 
-	// Broadcast to all subscribers
+func BroadcastRecipe(correlationID string, recipe interface{}) {
+	entry := LogEntry{
+		Timestamp:     time.Now().Format(time.RFC3339),
+		CorrelationID: correlationID,
+		Type:          "recipe",
+		Data:          recipe,
+	}
+	broadcast(entry)
+}
+
+func broadcast(entry LogEntry) {
+	if entry.Type == "log" {
+		b, _ := json.Marshal(entry)
+		fmt.Println(string(b))
+	}
+
 	subMu.Lock()
 	defer subMu.Unlock()
 	for ch := range subscribers {
 		select {
 		case ch <- entry:
 		default:
-			// If buffer is full, skip this subscriber to avoid blocking
 		}
 	}
 }

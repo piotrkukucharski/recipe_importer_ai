@@ -136,18 +136,18 @@ func (s *TandoorService) getWithRetry(path string, spaceID string, token string,
 	return nil, lastErr
 }
 
-func (s *TandoorService) SaveRecipe(recipe *models.Recipe, spaceID string, token string, correlationID string) error {
+func (s *TandoorService) SaveRecipe(recipe *models.Recipe, spaceID string, token string, correlationID string) (map[string]interface{}, error) {
 	LogJSON(correlationID, "Tandoor", fmt.Sprintf("Starting recipe save process for space %s: %s", spaceID, recipe.Name), "INFO")
 	
 	// 0. Check if recipe already exists
 	exists, err := s.recipeExists(recipe.SourceURL, spaceID, token, correlationID)
 	if err != nil {
 		LogJSON(correlationID, "Tandoor", fmt.Sprintf("Error checking if recipe exists: %v", err), "ERROR")
-		return err
+		return nil, err
 	}
 	if exists {
 		LogJSON(correlationID, "Tandoor", fmt.Sprintf("Recipe from URL '%s' already exists in space %s, skipping", recipe.SourceURL, spaceID), "INFO")
-		return nil
+		return nil, nil
 	}
 
 	// 1. Process steps and ingredients to ensure everything exists
@@ -161,11 +161,11 @@ func (s *TandoorService) SaveRecipe(recipe *models.Recipe, spaceID string, token
 			
 			_, err := s.getOrCreateFood(ing.Food.Name, spaceID, token, correlationID)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			_, err = s.getOrCreateUnit(unitName, spaceID, token, correlationID)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
@@ -198,7 +198,7 @@ func (s *TandoorService) SaveRecipe(recipe *models.Recipe, spaceID string, token
 	createdRecipe, err := s.postWithRetry("/api/recipe/", tandoorRecipe, spaceID, token, correlationID)
 	if err != nil {
 		LogJSON(correlationID, "Tandoor", fmt.Sprintf("Error saving recipe: %v", err), "ERROR")
-		return err
+		return nil, err
 	}
 
 	recipeID := int(createdRecipe["id"].(float64))
@@ -212,7 +212,7 @@ func (s *TandoorService) SaveRecipe(recipe *models.Recipe, spaceID string, token
 		}
 	}
 
-	return nil
+	return createdRecipe, nil
 }
 
 func (s *TandoorService) postWithRetry(path string, body interface{}, spaceID string, token string, correlationID string) (map[string]interface{}, error) {
