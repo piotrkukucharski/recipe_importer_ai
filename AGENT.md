@@ -24,7 +24,7 @@ Recipe Importer AI is an autonomous ingestion pipeline designed to bridge the ga
 
 ### 3. Storage Layer (`services/tandoor.go`)
 - **Target:** Tandoor Recipe Manager REST API.
-- **Space Management:** Uses `X-Space-ID` header to route data to the correct user space.
+- **Space Management:** Operates by switching the session's active space context. Before each retry-enabled request (GET/POST/PUT), it calls `/api/switch-active-space/{spaceId}/`. This ensures compatibility with Tandoor's stateful space architecture where `X-Space-ID` headers are not supported for resource creation.
 - **Dependency Resolution:** Automatically looks up or creates Food, Units, and Keywords before saving the recipe to avoid foreign key errors.
 - **Image Sync:** Performed via a separate `PUT` multipart request to `/api/recipe/{id}/image/` to ensure Tandoor handles the image URL correctly.
 - **Duplicate Prevention:** Strict exact-match check on `source_url`.
