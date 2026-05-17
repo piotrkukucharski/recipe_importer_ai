@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"recipe_importer_ai/services"
@@ -59,6 +60,61 @@ func (h *Handler) Logout(c echo.Context) error {
 	cookie.HttpOnly = true
 	c.SetCookie(cookie)
 	return c.JSON(http.StatusOK, map[string]string{"message": "Logged out"})
+}
+
+func (h *Handler) GetLogs(c echo.Context) error {
+	c.Response().Header().Set(echo.HeaderContentType, "text/event-stream")
+	c.Response().Header().Set(echo.HeaderCacheControl, "no-cache")
+	c.Response().Header().Set(echo.HeaderConnection, "keep-alive")
+	c.Response().WriteHeader(http.StatusOK)
+
+	logChan := services.Subscribe()
+	defer services.Unsubscribe(logChan)
+
+	enc := json.NewEncoder(c.Response())
+
+	for {
+		select {
+		case entry := <-logChan:
+			fmt.Fprintf(c.Response(), "data: ")
+			if err := enc.Encode(entry); err != nil {
+				return err
+			}
+			fmt.Fprintf(c.Response(), "\n\n")
+			c.Response().Flush()
+		case <-c.Request().Context().Done():
+			return nil
+		}
+	}
+}
+
+func (h *Handler) GetLogsByCorrelationID(c echo.Context) error {
+	targetCID := c.Param("CorrelationID")
+	c.Response().Header().Set(echo.HeaderContentType, "text/event-stream")
+	c.Response().Header().Set(echo.HeaderCacheControl, "no-cache")
+	c.Response().Header().Set(echo.HeaderConnection, "keep-alive")
+	c.Response().WriteHeader(http.StatusOK)
+
+	logChan := services.Subscribe()
+	defer services.Unsubscribe(logChan)
+
+	enc := json.NewEncoder(c.Response())
+
+	for {
+		select {
+		case entry := <-logChan:
+			if entry.CorrelationID == targetCID {
+				fmt.Fprintf(c.Response(), "data: ")
+				if err := enc.Encode(entry); err != nil {
+					return err
+				}
+				fmt.Fprintf(c.Response(), "\n\n")
+				c.Response().Flush()
+			}
+		case <-c.Request().Context().Done():
+			return nil
+		}
+	}
 }
 
 func (h *Handler) ShowIndex(c echo.Context) error {

@@ -117,6 +117,8 @@ func runServer(h *api.Handler) {
     e.GET("/api/spaces", h.GetSpaces)
     e.POST("/api/login", h.Login)
     e.POST("/api/logout", h.Logout)
+    e.GET("/api/logs", h.GetLogs)
+    e.GET("/api/logs/:CorrelationID", h.GetLogsByCorrelationID)
 
 	// API
 	e.GET("/import", h.ImportRecipe)
