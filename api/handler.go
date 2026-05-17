@@ -144,6 +144,14 @@ func (h *Handler) ShowIndex(c echo.Context) error {
         nav { display: none; justify-content: flex-end; margin-bottom: 20px; }
         .logout-btn { background: #dc3545; width: auto; padding: 8px 15px; font-size: 14px; }
         .logout-btn:hover { background: #c82333; }
+        #log-container { margin-top: 20px; background: #222; color: #eee; padding: 15px; border-radius: 4px; font-family: monospace; font-size: 12px; height: 300px; overflow-y: auto; display: none; }
+        .log-entry { margin-bottom: 4px; border-bottom: 1px solid #333; padding-bottom: 2px; }
+        .log-time { color: #888; margin-right: 8px; }
+        .log-svc { color: #4fc3f7; font-weight: bold; margin-right: 8px; width: 80px; display: inline-block; }
+        .log-msg { white-space: pre-wrap; }
+        .level-ERROR { color: #ff5252; }
+        .level-WARN { color: #ffb74d; }
+        .level-INFO { color: #81c784; }
     </style>
 </head>
 <body>
@@ -193,6 +201,7 @@ func (h *Handler) ShowIndex(c echo.Context) error {
         </div>
 
         <div id="status"></div>
+        <div id="log-container"></div>
     </div>
 
     <script>
@@ -209,6 +218,9 @@ func (h *Handler) ShowIndex(c echo.Context) error {
         const urlInput = document.getElementById('url');
         const importBtn = document.getElementById('importBtn');
         const statusDiv = document.getElementById('status');
+        const logContainer = document.getElementById('log-container');
+
+        let logSource = null;
 
         function showApp() {
             loginForm.style.display = 'none';
@@ -222,6 +234,38 @@ func (h *Handler) ShowIndex(c echo.Context) error {
             mainApp.style.display = 'none';
             navbar.style.display = 'none';
             statusDiv.style.display = 'none';
+            logContainer.style.display = 'none';
+        }
+
+        function addLog(entry) {
+            const div = document.createElement('div');
+            div.className = 'log-entry';
+            
+            const time = new Date(entry.timestamp).toLocaleTimeString();
+            div.innerHTML = '<span class="log-time">' + time + '</span>' +
+                            '<span class="log-svc">[' + entry.service + ']</span>' +
+                            '<span class="log-msg level-' + entry.level + '">' + entry.message + '</span>';
+            logContainer.appendChild(div);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function startLogStream(cid) {
+            if (logSource) logSource.close();
+            logContainer.innerHTML = '';
+            logContainer.style.display = 'block';
+            
+            logSource = new EventSource('/api/logs/' + cid);
+            logSource.onmessage = (e) => {
+                const entry = JSON.parse(e.data);
+                addLog(entry);
+                if (entry.message.includes('Pipeline completed successfully') || entry.message.includes('Final failure')) {
+                    // We don't necessarily want to close immediately to let user see final logs
+                    // but we could if we wanted to.
+                }
+            };
+            logSource.onerror = () => {
+                logSource.close();
+            };
         }
 
         function loadSpaces() {
@@ -295,20 +339,27 @@ func (h *Handler) ShowIndex(c echo.Context) error {
             fetch('/import?url=' + encodeURIComponent(url) + '&space=' + space + '&lang=' + lang)
                 .then(res => {
                     if (res.status === 202) {
-                        statusDiv.className = 'success';
-                        statusDiv.textContent = 'Import task submitted! It is running in the background. Check Tandoor in a moment.';
-                        urlInput.value = '';
+                        return res.json();
                     } else if (res.status === 401) {
                         statusDiv.className = 'error';
                         statusDiv.textContent = 'Session expired. Please refresh and login again.';
                         showLogin();
+                        throw new Error('Unauthorized');
                     } else {
                         throw new Error('Server error');
                     }
                 })
+                .then(data => {
+                    statusDiv.className = 'success';
+                    statusDiv.textContent = 'Import task submitted! Check logs below for progress.';
+                    urlInput.value = '';
+                    startLogStream(data.correlation_id);
+                })
                 .catch(err => {
-                    statusDiv.className = 'error';
-                    statusDiv.textContent = 'An error occurred while scheduling the import.';
+                    if (err.message !== 'Unauthorized') {
+                        statusDiv.className = 'error';
+                        statusDiv.textContent = 'An error occurred while scheduling the import.';
+                    }
                 })
                 .finally(() => {
                     importBtn.disabled = false;
