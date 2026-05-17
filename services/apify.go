@@ -50,7 +50,7 @@ func (s *ApifyService) ScrapeItems(url string, correlationID string) ([]ScrapedI
 	}
 
 	LogJSON(correlationID, "Apify", fmt.Sprintf("Selected actor: %s", actorID), "INFO")
-	apiUrl := fmt.Sprintf("https://api.apify.com/v2/acts/%s/run-sync-get-dataset-items?token=%s", actorID, s.Token)
+	apiUrl := fmt.Sprintf("https://api.apify.com/v2/acts/%s/run-sync-get-dataset-items?token=%s&timeout=120", actorID, s.Token)
 	
 	inputJson, _ := json.Marshal(input)
 	resp, err := http.Post(apiUrl, "application/json", bytes.NewBuffer(inputJson))
@@ -127,10 +127,16 @@ func (s *ApifyService) ScrapeItems(url string, correlationID string) ([]ScrapedI
 
 func (s *ApifyService) GetActorAndInput(url string) (string, map[string]interface{}) {
 	if strings.Contains(url, "youtube.com/shorts") || strings.Contains(url, "youtu.be/") && strings.Contains(url, "shorts") {
-		return "streamers~youtube-shorts-scraper", map[string]interface{}{"startUrls": []map[string]string{{"url": url}}}
+		return "streamers~youtube-shorts-scraper", map[string]interface{}{
+            "startUrls": []map[string]string{{"url": url}},
+            "maxConcurrency": 1,
+        }
 	}
 	if strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be") {
-		return "streamers~youtube-scraper", map[string]interface{}{"startUrls": []map[string]string{{"url": url}}}
+		return "streamers~youtube-scraper", map[string]interface{}{
+            "startUrls": []map[string]string{{"url": url}},
+            "maxConcurrency": 1,
+        }
 	}
 	if strings.Contains(url, "instagram.com") {
         // Check if it's a profile or a post
@@ -140,21 +146,37 @@ func (s *ApifyService) GetActorAndInput(url string) (string, map[string]interfac
                 "directUrls": []string{url},
                 "resultsType": "posts",
                 "resultsLimit": 20,
+                "maxConcurrency": 1,
             }
         }
-		return "apify~instagram-scraper", map[string]interface{}{"directUrls": []string{url}}
+		return "apify~instagram-scraper", map[string]interface{}{
+            "directUrls": []string{url},
+            "maxConcurrency": 1,
+        }
 	}
 	if strings.Contains(url, "facebook.com") {
 		if strings.Contains(url, "/groups/") {
-			return "apify~facebook-groups-scraper", map[string]interface{}{"startUrls": []map[string]string{{"url": url}}}
+			return "apify~facebook-groups-scraper", map[string]interface{}{
+                "startUrls": []map[string]string{{"url": url}},
+                "maxConcurrency": 1,
+            }
 		}
 		if strings.Contains(url, "/posts/") || strings.Contains(url, "/permalink/") {
-			return "apify~facebook-posts-scraper", map[string]interface{}{"startUrls": []map[string]string{{"url": url}}}
+			return "apify~facebook-posts-scraper", map[string]interface{}{
+                "startUrls": []map[string]string{{"url": url}},
+                "maxConcurrency": 1,
+            }
 		}
-		return "apify~facebook-pages-scraper", map[string]interface{}{"startUrls": []map[string]string{{"url": url}}}
+		return "apify~facebook-pages-scraper", map[string]interface{}{
+            "startUrls": []map[string]string{{"url": url}},
+            "maxConcurrency": 1,
+        }
 	}
 
-	return "apify~website-content-crawler", map[string]interface{}{"startUrls": []map[string]string{{"url": url}}}
+	return "apify~website-content-crawler", map[string]interface{}{
+        "startUrls": []map[string]string{{"url": url}},
+        "maxConcurrency": 1,
+    }
 }
 
 func (s *ApifyService) findAllImages(res map[string]interface{}) []string {
