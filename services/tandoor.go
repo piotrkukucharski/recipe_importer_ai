@@ -191,6 +191,7 @@ func (s *TandoorService) SaveRecipe(recipe *models.Recipe, spaceID string, token
 		"source_url":   recipe.SourceURL,
 		"steps":        s.mapSteps(recipe.Steps, spaceID, token, correlationID),
         "keywords":     keywordObjs,
+        "image_url":    recipe.ImageURL,
 	}
 
 	LogJSON(correlationID, "Tandoor", "Sending final recipe to Tandoor API", "INFO")
@@ -290,18 +291,14 @@ func (s *TandoorService) updateImageMultipartWithRetry(recipeID int, imageURL st
 			continue
 		}
 
-		if resp.StatusCode >= 500 {
+		if resp.StatusCode >= 400 {
 			bodyBytes, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			lastErr = fmt.Errorf("server error %d: %s", resp.StatusCode, string(bodyBytes))
+			lastErr = fmt.Errorf("tandoor error %d: %s", resp.StatusCode, string(bodyBytes))
+			LogJSON(correlationID, "Tandoor", fmt.Sprintf("Failed to update image: %v", lastErr), "ERROR")
 			continue
 		}
 		defer resp.Body.Close()
-
-		if resp.StatusCode >= 400 {
-			bodyBytes, _ := io.ReadAll(resp.Body)
-			return fmt.Errorf("tandoor error %d: %s", resp.StatusCode, string(bodyBytes))
-		}
 
 		LogJSON(correlationID, "Tandoor", "Image URL successfully updated via multipart", "INFO")
 		return nil

@@ -81,13 +81,22 @@ func (s *ApifyService) ScrapeItems(url string, correlationID string) ([]ScrapedI
 		item := ScrapedItem{}
 		
 		// Image extraction
-		if img, ok := res["displayUrl"].(string); ok {
+		if img, ok := res["displayUrl"].(string); ok && img != "" {
 			item.ImageURL = img
-		} else if img, ok := res["thumbnailUrl"].(string); ok {
+		} else if img, ok := res["thumbnailUrl"].(string); ok && img != "" {
 			item.ImageURL = img
-		} else if img, ok := res["imageUrl"].(string); ok {
+		} else if img, ok := res["imageUrl"].(string); ok && img != "" {
 			item.ImageURL = img
-		}
+		} else if img, ok := res["topImage"].(string); ok && img != "" {
+			item.ImageURL = img
+		} else if img, ok := res["image"].(string); ok && img != "" {
+			item.ImageURL = img
+		} else if img, ok := res["mainImage"].(string); ok && img != "" {
+			item.ImageURL = img
+		} else {
+            // Recursive search for common image keys
+            item.ImageURL = s.findImageInMap(res)
+        }
 
 		// URL extraction (for individual posts in profile)
 		if u, ok := res["url"].(string); ok {
@@ -160,6 +169,41 @@ func (s *ApifyService) GetActorAndInput(url string) (string, map[string]interfac
 	}
 
 	return "apify~website-content-crawler", map[string]interface{}{"startUrls": []map[string]string{{"url": url}}}
+}
+
+func (s *ApifyService) findImageInMap(m map[string]interface{}) string {
+    // Priority keys
+    priorityKeys := []string{"ogImage", "twitterImage", "topImage", "imageUrl", "thumbnailUrl", "displayUrl", "image", "mainImage"}
+    for _, key := range priorityKeys {
+        if val, ok := m[key]; ok {
+            if s, ok := val.(string); ok && s != "" && strings.HasPrefix(s, "http") {
+                return s
+            }
+        }
+    }
+
+    // Recursively search in sub-maps and arrays
+    for _, val := range m {
+        switch v := val.(type) {
+        case map[string]interface{}:
+            if img := s.findImageInMap(v); img != "" {
+                return img
+            }
+        case []interface{}:
+            for _, item := range v {
+                if subMap, ok := item.(map[string]interface{}); ok {
+                    if img := s.findImageInMap(subMap); img != "" {
+                        return img
+                    }
+                } else if s, ok := item.(string); ok && strings.HasPrefix(s, "http") {
+                    if strings.Contains(s, ".jpg") || strings.Contains(s, ".png") || strings.Contains(s, ".webp") || strings.Contains(s, ".jpeg") {
+                        return s
+                    }
+                }
+            }
+        }
+    }
+    return ""
 }
 
 func (s *ApifyService) IsInstagramProfile(url string) bool {
