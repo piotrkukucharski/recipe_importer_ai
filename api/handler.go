@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"recipe_importer_ai/services"
 	"time"
 
@@ -23,7 +22,7 @@ func (h *Handler) getToken(c echo.Context) string {
 	if err == nil {
 		return cookie.Value
 	}
-	return os.Getenv("TANDOOR_BEARER_TOKEN")
+	return ""
 }
 
 func (h *Handler) Login(c echo.Context) error {
@@ -135,18 +134,22 @@ func (h *Handler) ShowIndex(c echo.Context) error {
             loadSpaces();
         }
 
+        function showLogin() {
+            loginForm.style.display = 'block';
+            mainApp.style.display = 'none';
+        }
+
         function loadSpaces() {
             fetch('/api/spaces')
                 .then(res => {
                     if (res.status === 401) {
-                        loginForm.style.display = 'block';
-                        mainApp.style.display = 'none';
+                        showLogin();
                         return [];
                     }
                     return res.json();
                 })
                 .then(data => {
-                    if (data.length > 0) {
+                    if (data && data.length > 0) {
                         spaceSelect.innerHTML = '';
                         data.forEach(s => {
                             const opt = document.createElement('option');
@@ -157,7 +160,7 @@ func (h *Handler) ShowIndex(c echo.Context) error {
                     }
                 })
                 .catch(err => {
-                    spaceSelect.innerHTML = '<option value="">Error loading spaces</option>';
+                    console.error('Failed to load spaces:', err);
                 });
         }
 
@@ -179,10 +182,14 @@ func (h *Handler) ShowIndex(c echo.Context) error {
             });
         });
 
-        // Initial check
+        // Initial check - if not authorized, show login immediately
         fetch('/api/spaces').then(res => {
-            if (res.ok) showApp();
-        });
+            if (res.ok) {
+                showApp();
+            } else {
+                showLogin();
+            }
+        }).catch(() => showLogin());
 
         importBtn.addEventListener('click', () => {
             const url = urlInput.value;
