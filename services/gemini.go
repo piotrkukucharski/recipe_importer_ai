@@ -181,10 +181,8 @@ Text to process:
 		fullResponse.WriteString(fmt.Sprintf("%v", part))
 	}
 
-	jsonStr := fullResponse.String()
-	jsonStr = strings.TrimPrefix(jsonStr, "```json")
-	jsonStr = strings.TrimSuffix(jsonStr, "```")
-	jsonStr = strings.TrimSpace(jsonStr)
+	rawStr := fullResponse.String()
+	jsonStr := extractJSON(rawStr)
 
 	// Check if it's an empty object (not a recipe)
 	if jsonStr == "{}" || jsonStr == "" {
@@ -200,8 +198,8 @@ Text to process:
 			LogJSON(correlationID, "Gemini", "Successfully unmarshaled from array format", "INFO")
 			return &recipes[0], nil
 		}
-		LogJSON(correlationID, "Gemini", fmt.Sprintf("Failed to unmarshal JSON: %v. Raw: %s", err, jsonStr), "ERROR")
-		return nil, fmt.Errorf("failed to unmarshal gemini response: %w, response: %s", err, jsonStr)
+		LogJSON(correlationID, "Gemini", fmt.Sprintf("Failed to unmarshal JSON: %v. Raw: %s", err, rawStr), "ERROR")
+		return nil, fmt.Errorf("failed to unmarshal gemini response: %w", err)
 	}
 
 	if recipe.Name == "" {
@@ -211,4 +209,28 @@ Text to process:
 
 	LogJSON(correlationID, "Gemini", fmt.Sprintf("Successfully unmarshaled recipe: %s", recipe.Name), "INFO")
 	return &recipe, nil
+}
+
+func extractJSON(s string) string {
+	s = strings.TrimSpace(s)
+
+	// Find first occurrence of { or [
+	start := strings.IndexAny(s, "{[")
+	if start == -1 {
+		return s
+	}
+
+	// Find last occurrence of } or ]
+	var end int
+	if s[start] == '{' {
+		end = strings.LastIndex(s, "}")
+	} else {
+		end = strings.LastIndex(s, "]")
+	}
+
+	if end == -1 || end < start {
+		return s
+	}
+
+	return s[start : end+1]
 }
