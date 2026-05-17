@@ -146,6 +146,11 @@ func (h *Handler) ImportRecipe(c echo.Context) error {
 	return c.JSON(http.StatusAccepted, map[string]interface{}{
 		"message":        "Import started",
 		"correlation_id": correlationID,
+		"debug": map[string]interface{}{
+			"url": url,
+			"space_id": spaceID,
+			"lang": lang,
+		},
 	})
 }
 
@@ -172,13 +177,13 @@ func (h *Handler) ProcessURL(url string, spaceID string, lang string, cid string
 
 func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, lang string, cid string) {
 	ctx := context.Background()
-	
+
 	recipe, err := h.Gemini.ProcessRecipe(ctx, item.Text, lang, cid)
 	if err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Gemini stage for %s: %v", item.URL, err), "ERROR")
 		return
 	}
-	
+
 	if recipe == nil {
 		return
 	}

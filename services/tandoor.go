@@ -43,6 +43,29 @@ func (s *TandoorService) GetSpaces(correlationID string) ([]Space, error) {
 	return s.getWithRetry("/api/space/", "", correlationID)
 }
 
+func (s *TandoorService) switchSpace(spaceID string, correlationID string) error {
+	if spaceID == "" {
+		return nil
+	}
+
+	path := fmt.Sprintf("/api/switch-active-space/%s/", spaceID)
+	req, _ := http.NewRequest("GET", s.BaseURL+path, nil)
+	req.Header.Set("Authorization", "Bearer "+s.Token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to switch space to %s: %s", spaceID, string(bodyBytes))
+	}
+
+	return nil
+}
+
 func (s *TandoorService) getWithRetry(path string, spaceID string, correlationID string) ([]Space, error) {
 	var lastErr error
 	for i := 0; i < maxRetries; i++ {
@@ -51,11 +74,15 @@ func (s *TandoorService) getWithRetry(path string, spaceID string, correlationID
 			LogJSON(correlationID, "Tandoor", fmt.Sprintf("Retrying GET %s (attempt %d/%d)", path, i+1, maxRetries), "INFO")
 		}
 
+		if spaceID != "" {
+			if err := s.switchSpace(spaceID, correlationID); err != nil {
+				lastErr = err
+				continue
+			}
+		}
+
 		req, _ := http.NewRequest("GET", s.BaseURL+path, nil)
 		req.Header.Set("Authorization", "Bearer "+s.Token)
-		if spaceID != "" {
-			req.Header.Set("X-Space-ID", spaceID)
-		}
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -168,12 +195,16 @@ func (s *TandoorService) postWithRetry(path string, body interface{}, spaceID st
 			LogJSON(correlationID, "Tandoor", fmt.Sprintf("Retrying POST %s (attempt %d/%d)", path, i+1, maxRetries), "INFO")
 		}
 
+		if spaceID != "" {
+			if err := s.switchSpace(spaceID, correlationID); err != nil {
+				lastErr = err
+				continue
+			}
+		}
+
 		b, _ := json.Marshal(body)
 		req, _ := http.NewRequest("POST", s.BaseURL+path, bytes.NewBuffer(b))
 		req.Header.Set("Authorization", "Bearer "+s.Token)
-		if spaceID != "" {
-			req.Header.Set("X-Space-ID", spaceID)
-		}
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := http.DefaultClient.Do(req)
@@ -209,6 +240,13 @@ func (s *TandoorService) updateImageMultipartWithRetry(recipeID int, imageURL st
 			time.Sleep(retryInterval * time.Duration(i))
 		}
 
+		if spaceID != "" {
+			if err := s.switchSpace(spaceID, correlationID); err != nil {
+				lastErr = err
+				continue
+			}
+		}
+
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
 		writer.WriteField("image_url", imageURL)
@@ -217,9 +255,6 @@ func (s *TandoorService) updateImageMultipartWithRetry(recipeID int, imageURL st
 		path := fmt.Sprintf("/api/recipe/%d/image/", recipeID)
 		req, _ := http.NewRequest("PUT", s.BaseURL+path, body)
 		req.Header.Set("Authorization", "Bearer "+s.Token)
-		if spaceID != "" {
-			req.Header.Set("X-Space-ID", spaceID)
-		}
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 
 		resp, err := http.DefaultClient.Do(req)
@@ -354,11 +389,15 @@ func (s *TandoorService) getRawWithRetry(path string, spaceID string, correlatio
 			time.Sleep(retryInterval * time.Duration(i))
 		}
 
+		if spaceID != "" {
+			if err := s.switchSpace(spaceID, correlationID); err != nil {
+				lastErr = err
+				continue
+			}
+		}
+
 		req, _ := http.NewRequest("GET", s.BaseURL+path, nil)
 		req.Header.Set("Authorization", "Bearer "+s.Token)
-		if spaceID != "" {
-			req.Header.Set("X-Space-ID", spaceID)
-		}
 		
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
