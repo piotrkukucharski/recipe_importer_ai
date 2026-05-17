@@ -359,9 +359,36 @@ func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, 
 	}
 
 	recipe.SourceURL = item.URL
-    // If AI picked an image, it's already in recipe.ImageURL
-    // If it didn't pick anything, we fall back to the first one found by scraper if available
-    if recipe.ImageURL == "" && item.ImageURL != "" {
+
+    // Visual image selection
+    bestImage := ""
+    maxScore := -1
+    
+    // Limit to top 5 candidates to avoid excessive API calls and time
+    candidates := item.Images
+    if len(candidates) > 5 {
+        candidates = candidates[:5]
+    }
+
+    services.LogJSON(cid, "Background", fmt.Sprintf("Starting visual evaluation for %d image candidates", len(candidates)), "INFO")
+    for _, imgURL := range candidates {
+        score, err := h.Gemini.EvaluateImage(ctx, imgURL, recipe.Name, cid)
+        if err != nil {
+            services.LogJSON(cid, "Background", fmt.Sprintf("Failed to evaluate image %s: %v", imgURL, err), "WARN")
+            continue
+        }
+        services.LogJSON(cid, "Background", fmt.Sprintf("Image score %d for: %s", score, imgURL), "INFO")
+        if score > maxScore {
+            maxScore = score
+            bestImage = imgURL
+        }
+        if score == 10 { break } // Perfect match found
+    }
+
+    if bestImage != "" && maxScore >= 4 { // Threshold of 4 to avoid poor images
+        recipe.ImageURL = bestImage
+        services.LogJSON(cid, "Background", fmt.Sprintf("Selected best image with score %d: %s", maxScore, bestImage), "INFO")
+    } else if recipe.ImageURL == "" && item.ImageURL != "" {
         recipe.ImageURL = item.ImageURL
     }
 

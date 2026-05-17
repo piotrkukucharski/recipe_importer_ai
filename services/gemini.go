@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"recipe_importer_ai/models"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/option"
@@ -23,6 +27,74 @@ func NewGeminiService(ctx context.Context) (*GeminiService, error) {
 		return nil, err
 	}
 	return &GeminiService{Client: client}, nil
+}
+
+func (s *GeminiService) EvaluateImage(ctx context.Context, imageURL string, recipeName string, correlationID string) (int, error) {
+	LogJSON(correlationID, "Gemini", fmt.Sprintf("Evaluating image visually: %s", imageURL), "INFO")
+
+	// 1. Download image
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(imageURL)
+	if err != nil {
+		return 0, fmt.Errorf("failed to download image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("failed to download image, status: %d", resp.StatusCode)
+	}
+
+	imgData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read image data: %w", err)
+	}
+
+    // Determine MIME type
+    contentType := resp.Header.Get("Content-Type")
+    if contentType == "" || !strings.HasPrefix(contentType, "image/") {
+        // Fallback or skip if not an image
+        if strings.Contains(imageURL, ".png") { contentType = "image/png" } else
+        if strings.Contains(imageURL, ".webp") { contentType = "image/webp" } else
+        { contentType = "image/jpeg" }
+    }
+
+	model := s.Client.GenerativeModel("gemini-1.5-flash")
+	
+	prompt := []genai.Part{
+		genai.ImageData(strings.TrimPrefix(contentType, "image/"), imgData),
+		genai.Text(fmt.Sprintf(`
+Analyze this image in the context of a recipe for: "%s".
+Rate this image on a scale of 0 to 10 based on these criteria:
+- 10: Perfect, high-quality photo of the FINAL, finished dish.
+- 7-9: Good photo of the finished dish, but maybe lower quality or slightly off-center.
+- 4-6: Photo of the dish but looks like a step-by-step process photo or contains unnecessary elements.
+- 1-3: Photo of an ingredient, or very loosely related to the dish.
+- 0: Icon, logo, advertisement, or completely unrelated image.
+
+Return ONLY the numeric score (e.g. "8"). Do not add any text.
+`, recipeName)),
+	}
+
+	res, err := model.GenerateContent(ctx, prompt...)
+	if err != nil {
+		return 0, err
+	}
+
+	if len(res.Candidates) == 0 || res.Candidates[0].Content == nil {
+		return 0, fmt.Errorf("no response from gemini for image evaluation")
+	}
+
+	var scoreStr strings.Builder
+	for _, part := range res.Candidates[0].Content.Parts {
+		scoreStr.WriteString(fmt.Sprintf("%v", part))
+	}
+
+	score, err := strconv.Atoi(strings.TrimSpace(scoreStr.String()))
+	if err != nil {
+		return 0, nil // Return 0 if we can't parse the score
+	}
+
+	return score, nil
 }
 
 func (s *GeminiService) ProcessRecipe(ctx context.Context, text string, imageURLs []string, targetLanguage string, correlationID string) (*models.Recipe, error) {
