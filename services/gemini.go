@@ -103,7 +103,7 @@ Return ONLY the numeric score (e.g. "8"). Do not add any text.
 
 func (s *GeminiService) ProcessRecipe(ctx context.Context, text string, imageURLs []string, targetLanguage string, correlationID string) (*models.Recipe, error) {
 	LogJSON(correlationID, "Gemini", fmt.Sprintf("Starting AI processing of extracted text (Target Language: %s)", targetLanguage), "INFO")
-	model := s.Client.GenerativeModel("gemini-3-flash-preview")
+	model := s.Client.GenerativeModel("gemini-3.1-pro-preview")
 
 	// Force JSON output
 	model.ResponseMIMEType = "application/json"
