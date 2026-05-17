@@ -63,6 +63,7 @@ func main() {
 
 func runBatchCLI(h *api.Handler, filePath string, spaceID string, lang string) {
 	cid := fmt.Sprintf("batch-%d", time.Now().Unix())
+	token := os.Getenv("TANDOOR_BEARER_TOKEN")
 	services.LogJSON(cid, "CLI", fmt.Sprintf("Starting CLI batch import from %s in space %s (Target Language: %s)", filePath, spaceID, lang), "INFO")
 
 	file, err := os.Open(filePath)
@@ -79,7 +80,7 @@ func runBatchCLI(h *api.Handler, filePath string, spaceID string, lang string) {
 		url := strings.TrimSpace(scanner.Text())
 		if url != "" && !strings.HasPrefix(url, "#") {
 			count++
-			h.ProcessURL(url, spaceID, lang, cid)
+			h.ProcessURL(url, spaceID, lang, token, cid)
 		}
 	}
 
@@ -114,6 +115,7 @@ func runServer(h *api.Handler) {
     // Web UI
     e.GET("/", h.ShowIndex)
     e.GET("/api/spaces", h.GetSpaces)
+    e.POST("/api/login", h.Login)
 
 	// API
 	e.GET("/import", h.ImportRecipe)

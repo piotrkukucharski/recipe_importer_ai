@@ -39,18 +39,45 @@ type Space struct {
 	Name string `json:"name"`
 }
 
-func (s *TandoorService) GetSpaces(correlationID string) ([]Space, error) {
-	return s.getWithRetry("/api/space/", "", correlationID)
+func (s *TandoorService) Authenticate(username, password string) (string, error) {
+	url := s.BaseURL + "/api-token-auth/"
+	body, _ := json.Marshal(map[string]string{
+		"username": username,
+		"password": password,
+	})
+
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(body))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("invalid credentials")
+	}
+
+	var result struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+
+	return result.Token, nil
 }
 
-func (s *TandoorService) switchSpace(spaceID string, correlationID string) error {
+func (s *TandoorService) GetSpaces(token string, correlationID string) ([]Space, error) {
+	return s.getWithRetry("/api/space/", "", token, correlationID)
+}
+
+func (s *TandoorService) switchSpace(spaceID string, token string, correlationID string) error {
 	if spaceID == "" {
 		return nil
 	}
 
 	path := fmt.Sprintf("/api/switch-active-space/%s/", spaceID)
 	req, _ := http.NewRequest("GET", s.BaseURL+path, nil)
-	req.Header.Set("Authorization", "Bearer "+s.Token)
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -66,7 +93,7 @@ func (s *TandoorService) switchSpace(spaceID string, correlationID string) error
 	return nil
 }
 
-func (s *TandoorService) getWithRetry(path string, spaceID string, correlationID string) ([]Space, error) {
+func (s *TandoorService) getWithRetry(path string, spaceID string, token string, correlationID string) ([]Space, error) {
 	var lastErr error
 	for i := 0; i < maxRetries; i++ {
 		if i > 0 {
@@ -75,14 +102,14 @@ func (s *TandoorService) getWithRetry(path string, spaceID string, correlationID
 		}
 
 		if spaceID != "" {
-			if err := s.switchSpace(spaceID, correlationID); err != nil {
+			if err := s.switchSpace(spaceID, token, correlationID); err != nil {
 				lastErr = err
 				continue
 			}
 		}
 
 		req, _ := http.NewRequest("GET", s.BaseURL+path, nil)
-		req.Header.Set("Authorization", "Bearer "+s.Token)
+		req.Header.Set("Authorization", "Bearer "+token)
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -109,11 +136,11 @@ func (s *TandoorService) getWithRetry(path string, spaceID string, correlationID
 	return nil, lastErr
 }
 
-func (s *TandoorService) SaveRecipe(recipe *models.Recipe, spaceID string, correlationID string) error {
+func (s *TandoorService) SaveRecipe(recipe *models.Recipe, spaceID string, token string, correlationID string) error {
 	LogJSON(correlationID, "Tandoor", fmt.Sprintf("Starting recipe save process for space %s: %s", spaceID, recipe.Name), "INFO")
 	
 	// 0. Check if recipe already exists
-	exists, err := s.recipeExists(recipe.SourceURL, spaceID, correlationID)
+	exists, err := s.recipeExists(recipe.SourceURL, spaceID, token, correlationID)
 	if err != nil {
 		LogJSON(correlationID, "Tandoor", fmt.Sprintf("Error checking if recipe exists: %v", err), "ERROR")
 		return err
@@ -132,11 +159,11 @@ func (s *TandoorService) SaveRecipe(recipe *models.Recipe, spaceID string, corre
 				unitName = "szt."
 			}
 			
-			_, err := s.getOrCreateFood(ing.Food.Name, spaceID, correlationID)
+			_, err := s.getOrCreateFood(ing.Food.Name, spaceID, token, correlationID)
 			if err != nil {
 				return err
 			}
-			_, err = s.getOrCreateUnit(unitName, spaceID, correlationID)
+			_, err = s.getOrCreateUnit(unitName, spaceID, token, correlationID)
 			if err != nil {
 				return err
 			}
@@ -146,7 +173,7 @@ func (s *TandoorService) SaveRecipe(recipe *models.Recipe, spaceID string, corre
     // 1b. Process keywords
     keywordObjs := []map[string]interface{}{}
     for _, kw := range recipe.Keywords {
-        kid, err := s.getOrCreateKeyword(kw, spaceID, correlationID)
+        kid, err := s.getOrCreateKeyword(kw, spaceID, token, correlationID)
         if err == nil && kid > 0 {
             keywordObjs = append(keywordObjs, map[string]interface{}{"id": kid, "name": kw})
         } else {
@@ -162,12 +189,12 @@ func (s *TandoorService) SaveRecipe(recipe *models.Recipe, spaceID string, corre
 		"waiting_time": recipe.WaitingTime,
 		"servings":     recipe.Servings,
 		"source_url":   recipe.SourceURL,
-		"steps":        s.mapSteps(recipe.Steps, spaceID, correlationID),
+		"steps":        s.mapSteps(recipe.Steps, spaceID, token, correlationID),
         "keywords":     keywordObjs,
 	}
 
 	LogJSON(correlationID, "Tandoor", "Sending final recipe to Tandoor API", "INFO")
-	createdRecipe, err := s.postWithRetry("/api/recipe/", tandoorRecipe, spaceID, correlationID)
+	createdRecipe, err := s.postWithRetry("/api/recipe/", tandoorRecipe, spaceID, token, correlationID)
 	if err != nil {
 		LogJSON(correlationID, "Tandoor", fmt.Sprintf("Error saving recipe: %v", err), "ERROR")
 		return err
@@ -178,7 +205,7 @@ func (s *TandoorService) SaveRecipe(recipe *models.Recipe, spaceID string, corre
 
 	if recipe.ImageURL != "" {
 		LogJSON(correlationID, "Tandoor", fmt.Sprintf("Setting external image URL: %s", recipe.ImageURL), "INFO")
-		err := s.updateImageMultipartWithRetry(recipeID, recipe.ImageURL, spaceID, correlationID)
+		err := s.updateImageMultipartWithRetry(recipeID, recipe.ImageURL, spaceID, token, correlationID)
 		if err != nil {
 			LogJSON(correlationID, "Tandoor", fmt.Sprintf("Warning: failed to set recipe image: %v", err), "WARN")
 		}
@@ -187,7 +214,7 @@ func (s *TandoorService) SaveRecipe(recipe *models.Recipe, spaceID string, corre
 	return nil
 }
 
-func (s *TandoorService) postWithRetry(path string, body interface{}, spaceID string, correlationID string) (map[string]interface{}, error) {
+func (s *TandoorService) postWithRetry(path string, body interface{}, spaceID string, token string, correlationID string) (map[string]interface{}, error) {
 	var lastErr error
 	for i := 0; i < maxRetries; i++ {
 		if i > 0 {
@@ -196,7 +223,7 @@ func (s *TandoorService) postWithRetry(path string, body interface{}, spaceID st
 		}
 
 		if spaceID != "" {
-			if err := s.switchSpace(spaceID, correlationID); err != nil {
+			if err := s.switchSpace(spaceID, token, correlationID); err != nil {
 				lastErr = err
 				continue
 			}
@@ -204,7 +231,7 @@ func (s *TandoorService) postWithRetry(path string, body interface{}, spaceID st
 
 		b, _ := json.Marshal(body)
 		req, _ := http.NewRequest("POST", s.BaseURL+path, bytes.NewBuffer(b))
-		req.Header.Set("Authorization", "Bearer "+s.Token)
+		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := http.DefaultClient.Do(req)
@@ -233,7 +260,7 @@ func (s *TandoorService) postWithRetry(path string, body interface{}, spaceID st
 	return nil, lastErr
 }
 
-func (s *TandoorService) updateImageMultipartWithRetry(recipeID int, imageURL string, spaceID string, correlationID string) error {
+func (s *TandoorService) updateImageMultipartWithRetry(recipeID int, imageURL string, spaceID string, token string, correlationID string) error {
 	var lastErr error
 	for i := 0; i < maxRetries; i++ {
 		if i > 0 {
@@ -241,7 +268,7 @@ func (s *TandoorService) updateImageMultipartWithRetry(recipeID int, imageURL st
 		}
 
 		if spaceID != "" {
-			if err := s.switchSpace(spaceID, correlationID); err != nil {
+			if err := s.switchSpace(spaceID, token, correlationID); err != nil {
 				lastErr = err
 				continue
 			}
@@ -254,7 +281,7 @@ func (s *TandoorService) updateImageMultipartWithRetry(recipeID int, imageURL st
 
 		path := fmt.Sprintf("/api/recipe/%d/image/", recipeID)
 		req, _ := http.NewRequest("PUT", s.BaseURL+path, body)
-		req.Header.Set("Authorization", "Bearer "+s.Token)
+		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 
 		resp, err := http.DefaultClient.Do(req)
@@ -282,19 +309,19 @@ func (s *TandoorService) updateImageMultipartWithRetry(recipeID int, imageURL st
 	return lastErr
 }
 
-func (s *TandoorService) mapSteps(steps []models.Step, spaceID string, correlationID string) []map[string]interface{} {
+func (s *TandoorService) mapSteps(steps []models.Step, spaceID string, token string, correlationID string) []map[string]interface{} {
 	result := make([]map[string]interface{}, len(steps))
 	for i, step := range steps {
 		result[i] = map[string]interface{}{
 			"name":        step.Name,
 			"instruction": step.Instruction,
-			"ingredients": s.mapIngredients(step.Ingredients, spaceID, correlationID),
+			"ingredients": s.mapIngredients(step.Ingredients, spaceID, token, correlationID),
 		}
 	}
 	return result
 }
 
-func (s *TandoorService) mapIngredients(ingredients []models.Ingredient, spaceID string, correlationID string) []map[string]interface{} {
+func (s *TandoorService) mapIngredients(ingredients []models.Ingredient, spaceID string, token string, correlationID string) []map[string]interface{} {
 	result := make([]map[string]interface{}, len(ingredients))
 	for i, ing := range ingredients {
 		unitName := ing.Unit.Name
@@ -302,8 +329,8 @@ func (s *TandoorService) mapIngredients(ingredients []models.Ingredient, spaceID
 			unitName = "szt."
 		}
 
-		foodID, _ := s.getOrCreateFood(ing.Food.Name, spaceID, correlationID)
-		unitID, _ := s.getOrCreateUnit(unitName, spaceID, correlationID)
+		foodID, _ := s.getOrCreateFood(ing.Food.Name, spaceID, token, correlationID)
+		unitID, _ := s.getOrCreateUnit(unitName, spaceID, token, correlationID)
 		
 		result[i] = map[string]interface{}{
 			"food":   map[string]interface{}{"id": foodID, "name": ing.Food.Name},
@@ -315,9 +342,9 @@ func (s *TandoorService) mapIngredients(ingredients []models.Ingredient, spaceID
 	return result
 }
 
-func (s *TandoorService) getOrCreateFood(name string, spaceID string, correlationID string) (int, error) {
+func (s *TandoorService) getOrCreateFood(name string, spaceID string, token string, correlationID string) (int, error) {
     if name == "" { return 0, nil }
-	results, err := s.getRawWithRetry("/api/food/?query="+url.QueryEscape(name), spaceID, correlationID)
+	results, err := s.getRawWithRetry("/api/food/?query="+url.QueryEscape(name), spaceID, token, correlationID)
 	if err != nil {
 		return 0, err
 	}
@@ -329,16 +356,16 @@ func (s *TandoorService) getOrCreateFood(name string, spaceID string, correlatio
 	}
 
 	LogJSON(correlationID, "Tandoor", fmt.Sprintf("Food '%s' not found, creating new", name), "INFO")
-	res, err := s.postWithRetry("/api/food/", map[string]interface{}{"name": name}, spaceID, correlationID)
+	res, err := s.postWithRetry("/api/food/", map[string]interface{}{"name": name}, spaceID, token, correlationID)
 	if err != nil {
 		return 0, err
 	}
 	return int(res["id"].(float64)), nil
 }
 
-func (s *TandoorService) getOrCreateUnit(name string, spaceID string, correlationID string) (int, error) {
+func (s *TandoorService) getOrCreateUnit(name string, spaceID string, token string, correlationID string) (int, error) {
     if name == "" { return 0, nil }
-	results, err := s.getRawWithRetry("/api/unit/?query="+url.QueryEscape(name), spaceID, correlationID)
+	results, err := s.getRawWithRetry("/api/unit/?query="+url.QueryEscape(name), spaceID, token, correlationID)
 	if err != nil {
 		return 0, err
 	}
@@ -350,16 +377,16 @@ func (s *TandoorService) getOrCreateUnit(name string, spaceID string, correlatio
 	}
 
 	LogJSON(correlationID, "Tandoor", fmt.Sprintf("Unit '%s' not found, creating new", name), "INFO")
-	res, err := s.postWithRetry("/api/unit/", map[string]interface{}{"name": name}, spaceID, correlationID)
+	res, err := s.postWithRetry("/api/unit/", map[string]interface{}{"name": name}, spaceID, token, correlationID)
 	if err != nil {
 		return 0, err
 	}
 	return int(res["id"].(float64)), nil
 }
 
-func (s *TandoorService) getOrCreateKeyword(name string, spaceID string, correlationID string) (int, error) {
+func (s *TandoorService) getOrCreateKeyword(name string, spaceID string, token string, correlationID string) (int, error) {
     if name == "" { return 0, nil }
-    results, err := s.getRawWithRetry("/api/keyword/?query="+url.QueryEscape(name), spaceID, correlationID)
+    results, err := s.getRawWithRetry("/api/keyword/?query="+url.QueryEscape(name), spaceID, token, correlationID)
     if err != nil {
         return 0, err
     }
@@ -371,7 +398,7 @@ func (s *TandoorService) getOrCreateKeyword(name string, spaceID string, correla
     }
 
     LogJSON(correlationID, "Tandoor", fmt.Sprintf("Keyword '%s' not found, creating new", name), "INFO")
-    res, err := s.postWithRetry("/api/keyword/", map[string]interface{}{"name": name}, spaceID, correlationID)
+    res, err := s.postWithRetry("/api/keyword/", map[string]interface{}{"name": name}, spaceID, token, correlationID)
     if err != nil {
         return 0, err
     }
@@ -382,7 +409,7 @@ func stringsEqual(a, b string) bool {
 	return url.QueryEscape(a) == url.QueryEscape(b)
 }
 
-func (s *TandoorService) getRawWithRetry(path string, spaceID string, correlationID string) ([]map[string]interface{}, error) {
+func (s *TandoorService) getRawWithRetry(path string, spaceID string, token string, correlationID string) ([]map[string]interface{}, error) {
 	var lastErr error
 	for i := 0; i < maxRetries; i++ {
 		if i > 0 {
@@ -390,14 +417,14 @@ func (s *TandoorService) getRawWithRetry(path string, spaceID string, correlatio
 		}
 
 		if spaceID != "" {
-			if err := s.switchSpace(spaceID, correlationID); err != nil {
+			if err := s.switchSpace(spaceID, token, correlationID); err != nil {
 				lastErr = err
 				continue
 			}
 		}
 
 		req, _ := http.NewRequest("GET", s.BaseURL+path, nil)
-		req.Header.Set("Authorization", "Bearer "+s.Token)
+		req.Header.Set("Authorization", "Bearer "+token)
 		
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -422,12 +449,12 @@ func (s *TandoorService) getRawWithRetry(path string, spaceID string, correlatio
 	return nil, lastErr
 }
 
-func (s *TandoorService) recipeExists(sourceURL, spaceID, correlationID string) (bool, error) {
+func (s *TandoorService) recipeExists(sourceURL, spaceID, token, correlationID string) (bool, error) {
 	if sourceURL == "" {
 		return false, nil
 	}
 
-	results, err := s.getRawWithRetry("/api/recipe/?query="+url.QueryEscape(sourceURL), spaceID, correlationID)
+	results, err := s.getRawWithRetry("/api/recipe/?query="+url.QueryEscape(sourceURL), spaceID, token, correlationID)
 	if err != nil {
 		return false, err
 	}
