@@ -634,7 +634,7 @@ func (h *Handler) ShowImportProgress(c echo.Context) error {
                     '</div>' +
                 '</div>';
 
-            viewBtn.href = tandoorURL + '/view/recipe/' + recipe.id;
+            viewBtn.href = tandoorURL + '/recipe/' + recipe.id;
         }
 
         const logSource = new EventSource('/api/logs/' + cid);
