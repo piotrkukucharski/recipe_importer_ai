@@ -162,7 +162,7 @@ INGREDIENT EXTRACTION RULES:
 1. ALTERNATIVES: If a recipe lists an alternative ingredient (e.g., "śmietanka lub mleko kokosowe"), put the first one in "food.name" ("śmietanka") and the other in "note" ("jako alternatywa może być mleko kokosowe").
 2. GROUPED INGREDIENTS: If ingredients are grouped (e.g., "przyprawy (papryka, sól, pieprz)"), do NOT create one entry called "przyprawy". Instead, create THREE separate ingredient entries for "papryka", "sól", and "pieprz".
 3. NO PLURAL: Use singular form for ingredient names where possible.
-4. CLEAN NAMES: Remove descriptive words from names that belong in "note" (e.g., "food: cebula", "note: drobno posiekana").
+4. CLEAN NAMES: Remove descriptive words, states or adjectives from names and put them in "note" (e.g., "food: banany", "note: dojrzałe"; "food: sok z pomarańczy", "note: świeżo wyciśnięty"; "food: natka pietruszki", "note: świeża"; "food: cebula", "note: drobno posiekana").
 
 Potential Image URLs:
 %s
