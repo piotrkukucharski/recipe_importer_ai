@@ -163,6 +163,11 @@ INGREDIENT EXTRACTION RULES:
 2. GROUPED INGREDIENTS: If ingredients are grouped (e.g., "przyprawy (papryka, sól, pieprz)"), do NOT create one entry called "przyprawy". Instead, create THREE separate ingredient entries for "papryka", "sól", and "pieprz".
 3. NO PLURAL: Use singular form for ingredient names where possible.
 4. CLEAN NAMES: Remove descriptive words, states or adjectives from names and put them in "note" (e.g., "food: banany", "note: dojrzałe"; "food: sok z pomarańczy", "note: świeżo wyciśnięty"; "food: natka pietruszki", "note: świeża"; "food: cebula", "note: drobno posiekana").
+5. UNIT EXTRACTION: If a name contains a natural unit (e.g., "ząbek czosnku", "puszka pomidorów"), move the unit to the "unit" field and leave only the product in "food.name" (e.g., "food: czosnek", "unit: ząbek").
+6. NO BRANDS: Remove brand names or quality grades (e.g., "Mąka Szymanowska" -> "mąka pszenna"; "Masło Extra" -> "masło").
+7. TEMPERATURE: Move temperature information to "note" (e.g., "food: masło", "note: zimne"; "food: woda", "note: ciepła").
+8. SIZE: Move size adjectives to "note" (e.g., "food: jajko", "note: duże (L)"; "food: cebula", "note: mała").
+9. NOUN FIRST: Format names as "Noun + Adjective" for better sorting (e.g., "czerwona papryka" -> "papryka czerwona"; "wędzony boczek" -> "boczek wędzony").
 
 Potential Image URLs:
 %s
