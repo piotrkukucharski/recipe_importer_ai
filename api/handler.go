@@ -679,6 +679,16 @@ func (h *Handler) ShowImportProgress(c echo.Context) error {
             const entry = JSON.parse(e.data);
             if (entry.type === 'log') {
                 addLog(entry);
+                if (entry.message.includes('APIFY_TIMEOUT')) {
+                    document.querySelector('h1').textContent = 'Import Failed (Timeout)';
+                    document.querySelector('h1').style.color = '#dc3545';
+                    const errDiv = document.createElement('div');
+                    errDiv.className = 'error';
+                    errDiv.style.display = 'block';
+                    errDiv.style.marginTop = '20px';
+                    errDiv.textContent = 'The scraping process took too long (over 2 minutes) and was aborted. This usually happens with very complex pages or slow social media responses. Please try again or use a different link.';
+                    logContainer.parentNode.insertBefore(errDiv, logContainer);
+                }
             } else if (entry.type === 'recipe') {
                 renderRecipe(entry.data);
             }

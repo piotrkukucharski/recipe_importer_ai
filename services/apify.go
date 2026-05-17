@@ -8,6 +8,11 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+)
+
+var (
+	scrapeMu sync.Mutex
 )
 
 type ApifyService struct {
@@ -42,6 +47,9 @@ func (s *ApifyService) Scrape(url string, correlationID string) (string, string,
 }
 
 func (s *ApifyService) ScrapeItems(url string, correlationID string) ([]ScrapedItem, error) {
+	scrapeMu.Lock()
+	defer scrapeMu.Unlock()
+
 	LogJSON(correlationID, "Apify", fmt.Sprintf("Starting scraping for URL: %s", url), "INFO")
 	actorID, input := s.GetActorAndInput(url)
 	if actorID == "" {
@@ -60,10 +68,18 @@ func (s *ApifyService) ScrapeItems(url string, correlationID string) ([]ScrapedI
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusGatewayTimeout || resp.StatusCode == 408 {
+		return nil, fmt.Errorf("APIFY_TIMEOUT: Scraping took longer than 2 minutes and was aborted")
+	}
+
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
-		LogJSON(correlationID, "Apify", fmt.Sprintf("API returned error status %d: %s", resp.StatusCode, string(body)), "ERROR")
-		return nil, fmt.Errorf("apify error: %s", string(body))
+		bodyStr := string(body)
+		if strings.Contains(bodyStr, "timed out") || strings.Contains(bodyStr, "TIMEOUT") {
+			return nil, fmt.Errorf("APIFY_TIMEOUT: Scraping task reached execution limit")
+		}
+		LogJSON(correlationID, "Apify", fmt.Sprintf("API returned error status %d: %s", resp.StatusCode, bodyStr), "ERROR")
+		return nil, fmt.Errorf("apify error: %s", bodyStr)
 	}
 
 	var results []map[string]interface{}
@@ -127,16 +143,10 @@ func (s *ApifyService) ScrapeItems(url string, correlationID string) ([]ScrapedI
 
 func (s *ApifyService) GetActorAndInput(url string) (string, map[string]interface{}) {
 	if strings.Contains(url, "youtube.com/shorts") || strings.Contains(url, "youtu.be/") && strings.Contains(url, "shorts") {
-		return "streamers~youtube-shorts-scraper", map[string]interface{}{
-            "startUrls": []map[string]string{{"url": url}},
-            "maxConcurrency": 1,
-        }
+		return "streamers~youtube-shorts-scraper", map[string]interface{}{"startUrls": []map[string]string{{"url": url}}}
 	}
 	if strings.Contains(url, "youtube.com") || strings.Contains(url, "youtu.be") {
-		return "streamers~youtube-scraper", map[string]interface{}{
-            "startUrls": []map[string]string{{"url": url}},
-            "maxConcurrency": 1,
-        }
+		return "streamers~youtube-scraper", map[string]interface{}{"startUrls": []map[string]string{{"url": url}}}
 	}
 	if strings.Contains(url, "instagram.com") {
         // Check if it's a profile or a post
@@ -146,37 +156,21 @@ func (s *ApifyService) GetActorAndInput(url string) (string, map[string]interfac
                 "directUrls": []string{url},
                 "resultsType": "posts",
                 "resultsLimit": 20,
-                "maxConcurrency": 1,
             }
         }
-		return "apify~instagram-scraper", map[string]interface{}{
-            "directUrls": []string{url},
-            "maxConcurrency": 1,
-        }
+		return "apify~instagram-scraper", map[string]interface{}{"directUrls": []string{url}}
 	}
 	if strings.Contains(url, "facebook.com") {
 		if strings.Contains(url, "/groups/") {
-			return "apify~facebook-groups-scraper", map[string]interface{}{
-                "startUrls": []map[string]string{{"url": url}},
-                "maxConcurrency": 1,
-            }
+			return "apify~facebook-groups-scraper", map[string]interface{}{"startUrls": []map[string]string{{"url": url}}}
 		}
 		if strings.Contains(url, "/posts/") || strings.Contains(url, "/permalink/") {
-			return "apify~facebook-posts-scraper", map[string]interface{}{
-                "startUrls": []map[string]string{{"url": url}},
-                "maxConcurrency": 1,
-            }
+			return "apify~facebook-posts-scraper", map[string]interface{}{"startUrls": []map[string]string{{"url": url}}}
 		}
-		return "apify~facebook-pages-scraper", map[string]interface{}{
-            "startUrls": []map[string]string{{"url": url}},
-            "maxConcurrency": 1,
-        }
+		return "apify~facebook-pages-scraper", map[string]interface{}{"startUrls": []map[string]string{{"url": url}}}
 	}
 
-	return "apify~website-content-crawler", map[string]interface{}{
-        "startUrls": []map[string]string{{"url": url}},
-        "maxConcurrency": 1,
-    }
+	return "apify~website-content-crawler", map[string]interface{}{"startUrls": []map[string]string{{"url": url}}}
 }
 
 func (s *ApifyService) findAllImages(res map[string]interface{}) []string {
