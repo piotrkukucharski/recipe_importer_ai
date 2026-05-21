@@ -23,6 +23,8 @@
         nav { display: none; justify-content: flex-end; margin-bottom: 20px; }
         .logout-btn { background: #dc3545; width: auto; padding: 8px 15px; font-size: 14px; }
         .logout-btn:hover { background: #c82333; }
+        .history-link { background: #007bff; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-size: 14px; text-decoration: none; display: inline-block; margin-right: auto; transition: background 0.3s; font-weight: bold; }
+        .history-link:hover { background: #0069d9; }
         #log-container { margin-top: 20px; background: #222; color: #eee; padding: 15px; border-radius: 4px; font-family: monospace; font-size: 12px; height: 300px; overflow-y: auto; display: none; }
         .log-entry { margin-bottom: 4px; border-bottom: 1px solid #333; padding-bottom: 2px; }
         .log-time { color: #888; margin-right: 8px; }
@@ -35,6 +37,7 @@
 </head>
 <body>
     <nav id="navbar">
+        <a href="/imports" class="history-link">Import History</a>
         <button id="logoutBtnTop" class="logout-btn">Logout</button>
     </nav>
 

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"recipe_importer_ai/services"
+	"sync"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -17,12 +18,21 @@ import (
 //go:embed templates/*
 var templatesFS embed.FS
 
-var templates = template.Must(template.ParseFS(templatesFS, "templates/index.html", "templates/progress.html"))
+var templates = template.Must(template.ParseFS(templatesFS, "templates/index.html", "templates/progress.html", "templates/imports.html"))
+
+type ImportTask struct {
+	URL           string    `json:"url"`
+	CorrelationID string    `json:"correlation_id"`
+	Status        string    `json:"status"` // "started", "imported", "finished"
+	CreatedAt     time.Time `json:"created_at"`
+}
 
 type Handler struct {
 	Apify         *services.ApifyService
 	Gemini        *services.GeminiService
 	Tandoor       *services.TandoorService
+	imports       []*ImportTask
+	importsMu     sync.Mutex
 }
 
 func (h *Handler) getToken(c echo.Context) string {
@@ -130,6 +140,56 @@ func (h *Handler) ShowIndex(c echo.Context) error {
 	return templates.ExecuteTemplate(c.Response().Writer, "index.html", nil)
 }
 
+func (h *Handler) addImport(url, cid string) {
+	h.importsMu.Lock()
+	defer h.importsMu.Unlock()
+	
+	// Avoid duplicate entries
+	for _, imp := range h.imports {
+		if imp.CorrelationID == cid {
+			return
+		}
+	}
+
+	h.imports = append(h.imports, &ImportTask{
+		URL:           url,
+		CorrelationID: cid,
+		Status:        "started",
+		CreatedAt:     time.Now(),
+	})
+}
+
+func (h *Handler) updateImportStatus(cid string, status string) {
+	h.importsMu.Lock()
+	defer h.importsMu.Unlock()
+	for _, imp := range h.imports {
+		if imp.CorrelationID == cid {
+			imp.Status = status
+			break
+		}
+	}
+}
+
+func (h *Handler) ShowImports(c echo.Context) error {
+	h.importsMu.Lock()
+	defer h.importsMu.Unlock()
+
+	// Reverse imports to show newest first
+	n := len(h.imports)
+	reversed := make([]*ImportTask, n)
+	for i, imp := range h.imports {
+		reversed[n-1-i] = imp
+	}
+
+	data := map[string]interface{}{
+		"Imports": reversed,
+	}
+
+	c.Response().Header().Set(echo.HeaderContentType, echo.MIMETextHTMLCharsetUTF8)
+	c.Response().WriteHeader(http.StatusOK)
+	return templates.ExecuteTemplate(c.Response().Writer, "imports.html", data)
+}
+
 func (h *Handler) GetSpaces(c echo.Context) error {
 	correlationID := c.Request().Header.Get("X-Correlation-ID")
 	token := h.getToken(c)
@@ -174,11 +234,13 @@ func (h *Handler) ImportRecipe(c echo.Context) error {
 }
 
 func (h *Handler) ProcessURL(url string, spaceID string, lang string, token string, cid string) {
+	h.addImport(url, cid)
 	services.LogJSON(cid, "Background", fmt.Sprintf("Starting processing for URL: %s", url), "INFO")
 
 	items, err := h.Apify.ScrapeItems(url, cid)
 	if err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Final failure at Scrape stage for %s: %v", url, err), "ERROR")
+		h.updateImportStatus(cid, "finished")
 		return
 	}
 
@@ -191,6 +253,7 @@ func (h *Handler) ProcessURL(url string, spaceID string, lang string, token stri
 		h.processScrapedItem(items[0], spaceID, lang, token, cid)
 	} else {
 		services.LogJSON(cid, "Background", "No items found to process", "WARN")
+		h.updateImportStatus(cid, "finished")
 	}
 }
 
@@ -202,10 +265,12 @@ func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, 
 	recipe, err := h.Gemini.ProcessRecipe(ctx, fullText, item.Images, lang, cid)
 	if err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Gemini stage for %s: %v", item.URL, err), "ERROR")
+		h.updateImportStatus(cid, "finished")
 		return
 	}
 
 	if recipe == nil {
+		h.updateImportStatus(cid, "finished")
 		return
 	}
 
@@ -246,12 +311,14 @@ func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, 
 	createdRecipe, err := h.Tandoor.SaveRecipe(recipe, spaceID, token, cid)
 	if err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Tandoor stage for %s: %v", item.URL, err), "ERROR")
+		h.updateImportStatus(cid, "finished")
 		return
 	}
 
     if createdRecipe != nil {
         services.BroadcastRecipe(cid, createdRecipe)
 	    services.LogJSON(cid, "Background", fmt.Sprintf("Pipeline completed successfully for recipe: %s", recipe.Name), "INFO")
+	    h.updateImportStatus(cid, "imported")
     }
 }
 

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Import History - Recipe Importer AI</title>
+    <style>
+        body { font-family: 'Outfit', sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; line-height: 1.6; background: #f4f7f6; color: #333; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); }
+        
+        /* Navigation styling */
+        nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 1px solid #eee; padding-bottom: 15px; }
+        .nav-brand { font-size: 20px; font-weight: bold; color: #28a745; text-decoration: none; }
+        
+        .btn { text-decoration: none; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; transition: all 0.3s ease; display: inline-block; text-align: center; font-weight: 500; }
+        .btn-primary { background: #28a745; color: white; }
+        .btn-primary:hover { background: #218838; transform: translateY(-1px); }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-secondary:hover { background: #5a6268; transform: translateY(-1px); }
+        
+        /* Table Styles */
+        .table-responsive { overflow-x: auto; margin-top: 20px; border-radius: 8px; border: 1px solid #eee; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th, td { padding: 15px 20px; border-bottom: 1px solid #eee; }
+        th { background-color: #fafbfc; color: #666; font-weight: 600; text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background-color: #fcfdfe; }
+        
+        /* Status Badges */
+        .badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+        .badge-started { background-color: #e3f2fd; color: #0d47a1; }
+        .badge-imported { background-color: #e8f5e9; color: #1b5e20; }
+        .badge-finished { background-color: #eceff1; color: #37474f; }
+        .badge-failed { background-color: #ffebee; color: #c62828; }
+        
+        .url-cell { max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .cid-cell { font-family: monospace; font-size: 13px; color: #555; }
+        .time-cell { color: #888; font-size: 13px; }
+        
+        .no-imports { text-align: center; padding: 40px 20px; color: #888; }
+        .no-imports p { margin-bottom: 20px; }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <nav>
+            <a href="/" class="nav-brand">Recipe Importer AI</a>
+            <a href="/" class="btn btn-secondary">Back to Dashboard</a>
+        </nav>
+
+        <h2 style="margin-top: 0; color: #111; font-weight: 600;">Import History</h2>
+
+        <div class="table-responsive">
+            <table>
+                <thead>
+                    <tr>
+                        <th>URL</th>
+                        <th>Correlation ID</th>
+                        <th>Status</th>
+                        <th>Date</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{if .Imports}}
+                        {{range .Imports}}
+                        <tr>
+                            <td class="url-cell" title="{{.URL}}"><a href="{{.URL}}" target="_blank" style="color: #007bff; text-decoration: none;">{{.URL}}</a></td>
+                            <td class="cid-cell">{{.CorrelationID}}</td>
+                            <td>
+                                <span class="badge badge-{{.Status}}">{{.Status}}</span>
+                            </td>
+                            <td class="time-cell">{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td>
+                            <td>
+                                <a href="/import/{{.CorrelationID}}" class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;">View Progress</a>
+                            </td>
+                        </tr>
+                        {{end}}
+                    {{else}}
+                        <tr>
+                            <td colspan="5" class="no-imports">
+                                <p>No imports have been recorded yet.</p>
+                                <a href="/" class="btn btn-primary">Start Your First Import</a>
+                            </td>
+                        </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

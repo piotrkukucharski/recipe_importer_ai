@@ -89,7 +89,7 @@ func TestFullImportFlow(t *testing.T) {
 	if len(items) > 0 {
 		item := items[0]
 		// 2. Process with Gemini
-		recipe, err := h.Gemini.ProcessRecipe(context.Background(), item.Text, "Polish", "test-cid")
+		recipe, err := h.Gemini.ProcessRecipe(context.Background(), item.Text, item.Images, "Polish", "test-cid")
 		if err != nil {
 			t.Fatalf("Gemini error: %v", err)
 		}
@@ -98,7 +98,7 @@ func TestFullImportFlow(t *testing.T) {
 			recipe.ImageURL = item.ImageURL
 
 			// 3. Save to Tandoor
-			if err := h.Tandoor.SaveRecipe(recipe, "", "test-cid"); err != nil {
+			if _, err := h.Tandoor.SaveRecipe(recipe, "", "test-token", "test-cid"); err != nil {
 				t.Fatalf("Tandoor error: %v", err)
 			}
 		}
