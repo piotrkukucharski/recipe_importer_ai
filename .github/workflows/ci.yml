@@ -2,9 +2,12 @@ name: Build & Package Container
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
   pull_request:
-    branches: [ "main" ]
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
   build-go:
@@ -30,7 +33,7 @@ jobs:
         run: CGO_ENABLED=0 GOOS=linux go build -v -o recipe_importer_ai main.go
 
   build-docker:
-    name: Build & Publish Docker Image
+    name: Build, Save & Publish Docker Image
     needs: build-go
     runs-on: ubuntu-latest
     permissions:
@@ -44,30 +47,57 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Build and load locally so we can save it as an artifact file
+      - name: Build & Load Docker Image Locally
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: recipe-importer-ai:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Save the image as a tarball to "zapisywać" (save) the container to the workflow run
+      - name: Save Docker Image as Tarball Artifact
+        run: |
+          mkdir -p /tmp/artifacts
+          docker save -o /tmp/artifacts/recipe_importer_ai.tar recipe-importer-ai:latest
+
+      # Upload the tarball as a downloadable Github Actions artifact
+      - name: Upload Container Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: recipe-importer-ai-container
+          path: /tmp/artifacts/recipe_importer_ai.tar
+          retention-days: 7
+
+      # For direct changes on 'main' branch (without pull request or when merged to main):
+      # Log in to GitHub Container Registry (GHCR) and publish the image
       - name: Log in to GitHub Container Registry (GHCR)
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Metadata for Docker
+      - name: Extract Metadata for GHCR
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=ref,event=branch
-            type=ref,event=pr
             type=sha,format=short
             latest
 
-      - name: Build and Push Docker Image
+      - name: Build and Push Docker Image to GHCR
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
