@@ -8,11 +8,10 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 )
 
 var (
-	scrapeMu sync.Mutex
+	scrapeQueue = make(chan struct{}, 1)
 )
 
 type ApifyService struct {
@@ -47,8 +46,9 @@ func (s *ApifyService) Scrape(url string, correlationID string) (string, string,
 }
 
 func (s *ApifyService) ScrapeItems(url string, correlationID string) ([]ScrapedItem, error) {
-	scrapeMu.Lock()
-	defer scrapeMu.Unlock()
+	LogJSON(correlationID, "Apify", fmt.Sprintf("Waiting in scrape queue for URL: %s", url), "INFO")
+	scrapeQueue <- struct{}{}
+	defer func() { <-scrapeQueue }()
 
 	LogJSON(correlationID, "Apify", fmt.Sprintf("Starting scraping for URL: %s", url), "INFO")
 	actorID, input := s.GetActorAndInput(url)

@@ -16,7 +16,6 @@ type Handler struct {
 	Apify         *services.ApifyService
 	Gemini        *services.GeminiService
 	Tandoor       *services.TandoorService
-	Transcription *services.TranscriptionService
 }
 
 func (h *Handler) getToken(c echo.Context) string {
@@ -439,18 +438,10 @@ func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, 
 
 	fullText := item.Text
 
-	// Handle transcription if video is present
+	// Handle native transcription if present
 	if item.Transcript != "" {
 		services.LogJSON(cid, "Background", "Using native transcript from scraper", "INFO")
 		fullText += "\n\n--- VIDEO TRANSCRIPT ---\n" + item.Transcript
-	} else if item.VideoURL != "" && h.Transcription != nil {
-		services.LogJSON(cid, "Background", "Video detected, starting transcription service", "INFO")
-		transcript, err := h.Transcription.TranscribeVideo(ctx, item.VideoURL, cid)
-		if err != nil {
-			services.LogJSON(cid, "Background", fmt.Sprintf("Transcription failed (continuing with original text): %v", err), "WARN")
-		} else {
-			fullText += "\n\n--- VIDEO TRANSCRIPT ---\n" + transcript
-		}
 	}
 
 	recipe, err := h.Gemini.ProcessRecipe(ctx, fullText, item.Images, lang, cid)
