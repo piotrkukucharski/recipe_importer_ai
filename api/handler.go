@@ -438,12 +438,6 @@ func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, 
 
 	fullText := item.Text
 
-	// Handle native transcription if present
-	if item.Transcript != "" {
-		services.LogJSON(cid, "Background", "Using native transcript from scraper", "INFO")
-		fullText += "\n\n--- VIDEO TRANSCRIPT ---\n" + item.Transcript
-	}
-
 	recipe, err := h.Gemini.ProcessRecipe(ctx, fullText, item.Images, lang, cid)
 	if err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Gemini stage for %s: %v", item.URL, err), "ERROR")

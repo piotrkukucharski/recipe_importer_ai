@@ -24,7 +24,6 @@ type ScrapedItem struct {
 	Images     []string // All potential images
 	URL        string
 	VideoURL   string
-	Transcript string
 }
 
 func NewApifyService() *ApifyService {
@@ -112,10 +111,7 @@ func (s *ApifyService) ScrapeItems(url string, correlationID string) ([]ScrapedI
 			item.VideoURL = v
 		}
 
-		// Native Transcript extraction (YouTube)
-		if t, ok := res["transcript"].(string); ok {
-			item.Transcript = t
-		}
+
 
 		// Text extraction
 		var text strings.Builder
