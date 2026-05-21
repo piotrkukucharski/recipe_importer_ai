@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Import Progress - Recipe Importer AI</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; background: #f4f7f6; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { margin-top: 0; color: #333; }
+        #log-container { margin-top: 20px; background: #222; color: #eee; padding: 15px; border-radius: 4px; font-family: monospace; font-size: 12px; height: 250px; overflow-y: auto; }
+        .log-entry { margin-bottom: 4px; border-bottom: 1px solid #333; padding-bottom: 2px; }
+        .log-time { color: #888; margin-right: 8px; }
+        .log-svc { color: #4fc3f7; font-weight: bold; margin-right: 8px; width: 80px; display: inline-block; }
+        .level-ERROR { color: #ff5252; }
+        .level-WARN { color: #ffb74d; }
+        .level-INFO { color: #81c784; }
+        
+        #recipe-preview { display: none; margin-bottom: 30px; border-bottom: 2px solid #eee; padding-bottom: 30px; }
+        .recipe-header { display: flex; gap: 20px; margin-bottom: 20px; }
+        .recipe-image { width: 200px; height: 200px; object-fit: cover; border-radius: 8px; background: #eee; }
+        .recipe-info h2 { margin: 0 0 10px 0; }
+        .recipe-meta { font-size: 14px; color: #666; }
+        .recipe-tags { margin-top: 10px; }
+        .tag { background: #e0e0e0; padding: 2px 8px; border-radius: 12px; font-size: 12px; margin-right: 5px; display: inline-block; }
+        
+        .recipe-content { display: grid; grid-template-columns: 1fr 2fr; gap: 30px; }
+        .ingredients ul { padding-left: 20px; }
+        .steps ol { padding-left: 20px; }
+        
+        .actions { margin-top: 20px; display: flex; gap: 10px; }
+        .btn { text-decoration: none; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background 0.3s; display: inline-block; text-align: center; }
+        .btn-primary { background: #28a745; color: white; }
+        .btn-primary:hover { background: #218838; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-secondary:hover { background: #5a6268; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn-danger:hover { background: #c82333; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="recipe-preview">
+            <div id="recipe-data"></div>
+            <div class="actions">
+                <a id="viewBtn" class="btn btn-primary" target="_blank">View in Tandoor</a>
+                <button id="deleteBtn" class="btn btn-danger">Delete & Return</button>
+            </div>
+        </div>
+
+        <h1>Importing Recipe...</h1>
+        <p>Correlation ID: <code id="cid-val">{{.CorrelationID}}</code></p>
+        
+        <div id="log-container"></div>
+        
+        <div class="actions" style="margin-top: 20px;">
+            <a href="/" class="btn btn-secondary">Import Another</a>
+        </div>
+    </div>
+
+    <script>
+        const logContainer = document.getElementById('log-container');
+        const recipePreview = document.getElementById('recipe-preview');
+        const recipeData = document.getElementById('recipe-data');
+        const viewBtn = document.getElementById('viewBtn');
+        const deleteBtn = document.getElementById('deleteBtn');
+        const cid = "{{.CorrelationID}}";
+        const tandoorURL = "{{.TandoorURL}}";
+
+        function addLog(entry) {
+            const div = document.createElement('div');
+            div.className = 'log-entry';
+            const time = new Date(entry.timestamp).toLocaleTimeString();
+            div.innerHTML = '<span class="log-time">' + time + '</span>' +
+                            '<span class="log-svc">[' + entry.service + ']</span>' +
+                            '<span class="log-msg level-' + entry.level + '">' + entry.message + '</span>';
+            logContainer.appendChild(div);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function renderRecipe(recipe) {
+            recipePreview.style.display = 'block';
+            document.querySelector('h1').textContent = 'Import Complete!';
+            
+            let ingredientsHTML = '<ul>';
+            recipe.steps.forEach(step => {
+                step.ingredients.forEach(ing => {
+                    ingredientsHTML += '<li>' + (ing.amount || '') + ' ' + (ing.unit ? ing.unit.name : '') + ' ' + ing.food.name + '</li>';
+                });
+            });
+            ingredientsHTML += '</ul>';
+
+            let stepsHTML = '<ol>';
+            recipe.steps.forEach(step => {
+                stepsHTML += '<li><strong>' + step.name + '</strong>: ' + step.instruction + '</li>';
+            });
+            stepsHTML += '</ol>';
+
+            let tagsHTML = '';
+            if (recipe.keywords) {
+                recipe.keywords.forEach(kw => {
+                    tagsHTML += '<span class="tag">' + (kw.name || kw) + '</span>';
+                });
+            }
+
+            const imageSrc = recipe.image ? (recipe.image.startsWith('http') ? recipe.image : tandoorURL + recipe.image) : '';
+
+            recipeData.innerHTML = '<div class="recipe-header">' +
+                    '<img src="' + imageSrc + '" class="recipe-image" alt="Recipe Image">' +
+                    '<div class="recipe-info">' +
+                        '<h2>' + recipe.name + '</h2>' +
+                        '<div class="recipe-meta">' +
+                            'Time: ' + (recipe.working_time + recipe.waiting_time) + ' min | Servings: ' + recipe.servings +
+                        '</div>' +
+                        '<div class="recipe-tags">' + tagsHTML + '</div>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="recipe-content">' +
+                    '<div class="ingredients">' +
+                        '<h3>Ingredients</h3>' +
+                        ingredientsHTML +
+                    '</div>' +
+                    '<div class="steps">' +
+                        '<h3>Instructions</h3>' +
+                        stepsHTML +
+                    '</div>' +
+                '</div>';
+
+            viewBtn.href = tandoorURL + '/recipe/' + recipe.id;
+
+            deleteBtn.onclick = () => {
+                if (!confirm('Are you sure you want to delete this recipe?')) return;
+                
+                deleteBtn.disabled = true;
+                deleteBtn.textContent = 'Deleting...';
+                
+                fetch('/api/recipe/' + recipe.id, { method: 'DELETE' })
+                    .then(res => {
+                        if (res.ok) {
+                            window.location.href = '/';
+                        } else {
+                            alert('Failed to delete recipe.');
+                            deleteBtn.disabled = false;
+                            deleteBtn.textContent = 'Delete & Return';
+                        }
+                    });
+            };
+        }
+
+        const logSource = new EventSource('/api/logs/' + cid);
+        logSource.onmessage = (e) => {
+            const entry = JSON.parse(e.data);
+            if (entry.type === 'log') {
+                addLog(entry);
+                if (entry.message.includes('APIFY_TIMEOUT')) {
+                    document.querySelector('h1').textContent = 'Import Failed (Timeout)';
+                    document.querySelector('h1').style.color = '#dc3545';
+                    const errDiv = document.createElement('div');
+                    errDiv.className = 'error';
+                    errDiv.style.display = 'block';
+                    errDiv.style.marginTop = '20px';
+                    errDiv.textContent = 'The scraping process took too long (over 2 minutes) and was aborted. This usually happens with very complex pages or slow social media responses. Please try again or use a different link.';
+                    logContainer.parentNode.insertBefore(errDiv, logContainer);
+                }
+            } else if (entry.type === 'recipe') {
+                renderRecipe(entry.data);
+            }
+        };
+        logSource.onerror = () => {
+            // logSource.close();
+        };
+    </script>
+</body>
+</html>
