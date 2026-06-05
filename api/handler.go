@@ -27,6 +27,12 @@ type ImportTask struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+type ImportTextRequest struct {
+	Text    string `json:"text"`
+	SpaceID string `json:"space"`
+	Lang    string `json:"lang"`
+}
+
 type Handler struct {
 	Apify         *services.ApifyService
 	Gemini        *services.GeminiService
@@ -231,6 +237,68 @@ func (h *Handler) ImportRecipe(c echo.Context) error {
 			"lang":     lang,
 		},
 	})
+}
+
+func (h *Handler) ImportRecipeFromText(c echo.Context) error {
+	var req ImportTextRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request payload"})
+	}
+
+	if req.Text == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "text is required"})
+	}
+
+	token := h.getToken(c)
+	if token == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+	}
+
+	correlationID := c.Request().Header.Get("X-Correlation-ID")
+	services.LogJSON(correlationID, "API", fmt.Sprintf("Received text import request in space %s (Lang: %s)", req.SpaceID, req.Lang), "INFO")
+
+	go h.ProcessText(req.Text, req.SpaceID, req.Lang, token, correlationID)
+
+	return c.JSON(http.StatusAccepted, map[string]interface{}{
+		"message":        "Import started",
+		"correlation_id": correlationID,
+		"debug": map[string]interface{}{
+			"space_id": req.SpaceID,
+			"lang":     req.Lang,
+		},
+	})
+}
+
+func (h *Handler) ProcessText(text string, spaceID string, lang string, token string, cid string) {
+	h.addImport("Import from Text", cid)
+	services.LogJSON(cid, "Background", "Starting processing for raw text", "INFO")
+
+	ctx := context.Background()
+
+	recipe, err := h.Gemini.ProcessRecipe(ctx, text, []string{}, lang, cid)
+	if err != nil {
+		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Gemini stage: %v", err), "ERROR")
+		h.updateImportStatus(cid, "finished")
+		return
+	}
+
+	if recipe == nil {
+		h.updateImportStatus(cid, "finished")
+		return
+	}
+
+	createdRecipe, err := h.Tandoor.SaveRecipe(recipe, spaceID, token, cid)
+	if err != nil {
+		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Tandoor stage: %v", err), "ERROR")
+		h.updateImportStatus(cid, "finished")
+		return
+	}
+
+	if createdRecipe != nil {
+		services.BroadcastRecipe(cid, createdRecipe)
+		services.LogJSON(cid, "Background", fmt.Sprintf("Pipeline completed successfully for recipe: %s", recipe.Name), "INFO")
+		h.updateImportStatus(cid, "imported")
+	}
 }
 
 func (h *Handler) ProcessURL(url string, spaceID string, lang string, token string, cid string) {
