@@ -312,6 +312,118 @@ INGREDIENT EXTRACTION RULES:
 	return s.parseRecipesJSON(jsonStr, rawStr, correlationID)
 }
 
+func (s *GeminiService) ProcessRecipeFromImagesAndText(ctx context.Context, images [][]byte, mimeTypes []string, text string, targetLanguage string, correlationID string) ([]*models.Recipe, error) {
+	LogJSON(correlationID, "Gemini", fmt.Sprintf("Starting AI processing of %d images and text (Target Language: %s)", len(images), targetLanguage), "INFO")
+	model := s.Client.GenerativeModel("gemini-3.1-pro-preview")
+
+	// Force JSON output
+	model.ResponseMIMEType = "application/json"
+
+	if targetLanguage == "" {
+		targetLanguage = "Polish"
+	}
+
+	promptParts := make([]genai.Part, 0, len(images)+1)
+
+	// Append each image as ImageData part
+	for i, imgData := range images {
+		mime := "image/jpeg"
+		if i < len(mimeTypes) && mimeTypes[i] != "" {
+			mime = mimeTypes[i]
+		}
+		format := strings.TrimPrefix(mime, "image/")
+		if format == "" || strings.Contains(format, "/") {
+			format = "jpeg"
+		}
+		promptParts = append(promptParts, genai.ImageData(format, imgData))
+	}
+
+	promptText := fmt.Sprintf(`
+Analyze the provided images and the accompanying text of culinary recipes. They may be photos of a cookbook, screenshots, food photos, and/or pasted text containing ingredients, steps, description.
+A single source can contain multiple recipes. Extract all recipes from these images and the text combined.
+
+If the images and text do NOT contain any recipes, return an empty JSON object: {}
+
+IMPORTANT: All recipes, including their names, descriptions, step names, instructions, and ingredient names/notes MUST be in the following language: %s. If the source text in the images or text is in a different language, translate it accurately to %s.
+
+DISH IMAGE SELECTION:
+Look at all the uploaded images.
+For each extracted recipe, identify the 0-based index of the image (from the uploaded list) that contains the photo of the finished dish/meal (the final result) for that specific recipe.
+If one of the images is indeed a photo of the finished dish for a recipe, put its 0-based index in the "dish_image_index" field for that recipe.
+If none of the uploaded images represent the finished dish/meal for that recipe (e.g., they only contain text, ingredients lists, or preparation steps), set "dish_image_index" to -1.
+
+Add keywords (tags) to each recipe. Choose appropriate ones from the list below or add your own if they fit (translate them to %s as well):
+vegan, vegetarian, for breakfast, for dinner, for lunch, snacks, for grill, coffee, drink, tea, smoothie, Polish cuisine, Japanese cuisine, Korean cuisine, Chinese cuisine, Sichuan cuisine, alcoholic drink, non-alcoholic drink, pancakes, cakes, soup, cream soup, bread, Italian cuisine, pasta, cheesecake, cake, salad.
+
+Return the result as a strictly formatted JSON object matching the structure below:
+{
+  "recipes": [
+    {
+      "name": "Recipe Name (in %s)",
+      "description": "Short description (in %s)",
+      "working_time": preparation time in minutes (int),
+      "waiting_time": waiting time in minutes (int),
+      "servings": number of servings (int),
+      "keywords": ["tag1", "tag2"],
+      "dish_image_index": 0-based index of the finished dish photo (int, or -1 if none),
+      "steps": [
+        {
+          "name": "Step Name (in %s)",
+          "instruction": "Detailed step instruction (in %s)",
+          "ingredients": [
+            {
+              "food": {"name": "ingredient name (in %s)"},
+              "unit": {"name": "unit (in %s), e.g., g, ml, pcs, tbsp"},
+              "amount": amount (float),
+              "note": "additional ingredient note (in %s)"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+INGREDIENT EXTRACTION RULES:
+1. ALTERNATIVES: If a recipe lists an alternative ingredient (e.g., "śmietanka lub mleko kokosowe"), put the first one in "food.name" ("śmietanka") and the other in "note" ("jako alternatywa może być mleko kokosowe").
+2. GROUPED INGREDIENTS: If ingredients are grouped (e.g., "przyprawy (papryka, sól, pieprz)"), do NOT create one entry called "przyprawy". Instead, create THREE separate ingredient entries for "papryka", "sól", and "pieprz".
+3. NO PLURAL: Use singular form for ingredient names where possible.
+4. CLEAN NAMES: Remove descriptive words, states or adjectives from names and put them in "note" (e.g., "food: banany", "note: dojrzałe"; "food: sok z pomarańczy", "note: świeżo wyciśnięty"; "food: natka pietruszki", "note: świeża"; "food: cebula", "note: drobno posiekana").
+5. UNIT EXTRACTION: If a name contains a natural unit (e.g., "ząbek czosnku", "puszka pomidorów"), move the unit to the "unit" field and leave only the product in "food.name" (e.g., "food: czosnek", "unit: ząbek").
+6. NO BRANDS: Remove brand names or quality grades (e.g., "Mąka Szymanowska" -> "mąka pszenna"; "Masło Extra" -> "masło").
+7. TEMPERATURE: Move temperature information to "note" (e.g., "food: masło", "note: zimne"; "food: woda", "note: ciepła").
+8. SIZE: Move size adjectives to "note" (e.g., "food: jajko", "note: duże (L)"; "food: cebula", "note: mała").
+9. NOUN FIRST: Format names as "Noun + Adjective" for better sorting (e.g., "czerwona papryka" -> "papryka czerwona"; "wędzony boczek" -> "boczek wędzony").
+
+Accompanying text to process:
+%s
+`, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage, text)
+
+	promptParts = append(promptParts, genai.Text(promptText))
+
+	resp, err := model.GenerateContent(ctx, promptParts...)
+	if err != nil {
+		LogJSON(correlationID, "Gemini", fmt.Sprintf("Error generating content from images and text: %v", err), "ERROR")
+		return nil, err
+	}
+
+	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil {
+		LogJSON(correlationID, "Gemini", "No candidates or content in response", "ERROR")
+		return nil, fmt.Errorf("no response from gemini")
+	}
+
+	var fullResponse strings.Builder
+	for _, part := range resp.Candidates[0].Content.Parts {
+		fullResponse.WriteString(fmt.Sprintf("%v", part))
+	}
+
+	rawStr := fullResponse.String()
+	jsonStr := extractJSON(rawStr)
+
+	return s.parseRecipesJSON(jsonStr, rawStr, correlationID)
+}
+
+
 type GeminiResponseWrapper struct {
 	Recipes []*models.Recipe `json:"recipes"`
 }

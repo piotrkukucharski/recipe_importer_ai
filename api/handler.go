@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"recipe_importer_ai/services"
@@ -426,6 +427,165 @@ func (h *Handler) ImportRecipeFromImages(c echo.Context) error {
 			"image_count": len(files),
 		},
 	})
+}
+
+func (h *Handler) ImportRecipeCustom(c echo.Context) error {
+	form, err := c.MultipartForm()
+	
+	var spaceID, lang, text string
+	var files []*multipart.FileHeader
+
+	if err == nil && form != nil {
+		spaceID = c.FormValue("space")
+		lang = c.FormValue("lang")
+		text = c.FormValue("text")
+		files = form.File["images"]
+	} else {
+		spaceID = c.FormValue("space")
+		lang = c.FormValue("lang")
+		text = c.FormValue("text")
+	}
+
+	if text == "" && len(files) == 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Either recipe text or images must be provided"})
+	}
+
+	token := h.getToken(c)
+	if token == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+	}
+
+	correlationID := c.Request().Header.Get("X-Correlation-ID")
+	if correlationID == "" {
+		correlationID = fmt.Sprintf("cust-%d", time.Now().UnixNano())
+	}
+	
+	username := h.getUsername(token)
+	spaceName := h.resolveSpaceName(spaceID, token, correlationID)
+
+	if len(files) > 0 && text != "" {
+		// Read all files into memory
+		var images [][]byte
+		var mimeTypes []string
+		for _, fileHeader := range files {
+			file, err := fileHeader.Open()
+			if err != nil {
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to open file: %v", err)})
+			}
+			
+			imgData, err := io.ReadAll(file)
+			file.Close()
+			if err != nil {
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to read file: %v", err)})
+			}
+			
+			images = append(images, imgData)
+			
+			mimeType := fileHeader.Header.Get("Content-Type")
+			if mimeType == "" {
+				mimeType = http.DetectContentType(imgData)
+			}
+			mimeTypes = append(mimeTypes, mimeType)
+		}
+
+		services.LogJSON(correlationID, "API", fmt.Sprintf("Received custom import request with text and %d images in space %s (Lang: %s)", len(files), spaceName, lang), "INFO")
+		go h.ProcessTextAndImages(images, mimeTypes, text, spaceID, spaceName, username, lang, token, correlationID)
+	} else if len(files) > 0 {
+		// Only images
+		var images [][]byte
+		var mimeTypes []string
+		for _, fileHeader := range files {
+			file, err := fileHeader.Open()
+			if err != nil {
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to open file: %v", err)})
+			}
+			
+			imgData, err := io.ReadAll(file)
+			file.Close()
+			if err != nil {
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to read file: %v", err)})
+			}
+			
+			images = append(images, imgData)
+			
+			mimeType := fileHeader.Header.Get("Content-Type")
+			if mimeType == "" {
+				mimeType = http.DetectContentType(imgData)
+			}
+			mimeTypes = append(mimeTypes, mimeType)
+		}
+
+		services.LogJSON(correlationID, "API", fmt.Sprintf("Received custom import request with %d images in space %s (Lang: %s)", len(files), spaceName, lang), "INFO")
+		go h.ProcessImages(images, mimeTypes, spaceID, spaceName, username, lang, token, correlationID)
+	} else {
+		// Only text
+		services.LogJSON(correlationID, "API", fmt.Sprintf("Received custom import request with text in space %s (Lang: %s)", spaceName, lang), "INFO")
+		go h.ProcessText(text, spaceID, spaceName, username, lang, token, correlationID)
+	}
+
+	return c.JSON(http.StatusAccepted, map[string]interface{}{
+		"message":        "Import started",
+		"correlation_id": correlationID,
+		"debug": map[string]interface{}{
+			"space_id":    spaceID,
+			"lang":        lang,
+			"has_text":    text != "",
+			"image_count": len(files),
+		},
+	})
+}
+
+func (h *Handler) ProcessTextAndImages(images [][]byte, mimeTypes []string, text string, spaceID string, spaceName string, username string, lang string, token string, cid string) {
+	h.addImport("Import from Text & Images", cid, username, spaceName)
+	services.LogJSON(cid, "Background", fmt.Sprintf("Starting processing for %d images and recipe text", len(images)), "INFO")
+
+	ctx := context.Background()
+
+	recipes, err := h.Gemini.ProcessRecipeFromImagesAndText(ctx, images, mimeTypes, text, lang, cid)
+	if err != nil {
+		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Gemini stage: %v", err), "ERROR")
+		h.updateImportStatus(cid, "finished")
+		return
+	}
+
+	if len(recipes) == 0 {
+		services.LogJSON(cid, "Background", "No recipes found in the uploaded images and text", "WARN")
+		h.updateImportStatus(cid, "finished")
+		return
+	}
+
+	importedCount := 0
+	for _, recipe := range recipes {
+		createdRecipe, err := h.Tandoor.SaveRecipe(recipe, spaceID, token, cid)
+		if err != nil {
+			services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Tandoor stage for recipe %s: %v", recipe.Name, err), "ERROR")
+			continue
+		}
+
+		if createdRecipe != nil {
+			recipeID := int(createdRecipe["id"].(float64))
+			
+			if recipe.DishImageIndex != nil && *recipe.DishImageIndex >= 0 && *recipe.DishImageIndex < len(images) {
+				idx := *recipe.DishImageIndex
+				services.LogJSON(cid, "Background", fmt.Sprintf("Gemini identified image at index %d as the finished dish for %s. Uploading to Tandoor...", idx, recipe.Name), "INFO")
+				
+				err = h.Tandoor.UpdateImageFileMultipartWithRetry(recipeID, images[idx], mimeTypes[idx], spaceID, token, cid)
+				if err != nil {
+					services.LogJSON(cid, "Background", fmt.Sprintf("Warning: failed to upload recipe image file: %v", err), "WARN")
+				}
+			}
+
+			services.BroadcastRecipe(cid, createdRecipe)
+			services.LogJSON(cid, "Background", fmt.Sprintf("Pipeline completed successfully for recipe: %s", recipe.Name), "INFO")
+			importedCount++
+		}
+	}
+
+	if importedCount > 0 {
+		h.updateImportStatus(cid, "imported")
+	} else {
+		h.updateImportStatus(cid, "finished")
+	}
 }
 
 func (h *Handler) ProcessImages(images [][]byte, mimeTypes []string, spaceID string, spaceName string, username string, lang string, token string, cid string) {
