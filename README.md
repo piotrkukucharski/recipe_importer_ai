@@ -24,7 +24,7 @@ A Go-based service that automatically scrapes recipes from social media (Instagr
 - API Keys:
   - [Apify API Token](https://console.apify.com/account/integrations)
   - [Google Gemini API Key](https://aistudio.google.com/app/apikey)
-  - [Tandoor Recipe Manager](https://tandoor.dev/) instance and Bearer Token
+  - [Tandoor Recipe Manager](https://tandoor.dev/) instance
 
 ## Configuration
 
@@ -34,7 +34,6 @@ Create a `.env` file in the root directory (see `.env.example`):
 APIFY_KEY=your_apify_key
 GEMINI_KEY=your_gemini_key
 TANDOOR_URL=https://your-tandoor.com
-TANDOOR_BEARER_TOKEN=your_tandoor_token
 PORT=8080
 ```
 
@@ -57,7 +56,7 @@ go run main.go
 
 To import URLs from a file:
 ```bash
-./recipe_importer_ai --file urls.txt --space 1
+./recipe_importer_ai --file urls.txt --space 1 --token <your_bearer_token>
 ```
 
 ## API Endpoints
@@ -65,6 +64,14 @@ To import URLs from a file:
 - `GET /`: Web UI
 - `GET /api/spaces`: List available Tandoor spaces
 - `GET /import?url=<url>&space=<id>`: Trigger an import (asynchronous)
+
+## MCP Server (SSE Mode)
+
+The application includes a Model Context Protocol (MCP) server running in SSE mode:
+- **SSE Connection Endpoint:** `GET /sse`
+- **Message Endpoint:** `POST /message`
+
+To use the MCP server, configure your client to connect to `http://localhost:8080/sse`. The client must include the Tandoor token in the `Authorization: Bearer <token>` or `X-Tandoor-Token` header.
 
 ## License
 

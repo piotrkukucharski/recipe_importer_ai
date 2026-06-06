@@ -21,13 +21,11 @@ const (
 
 type TandoorService struct {
 	BaseURL string
-	Token   string
 }
 
 func NewTandoorService() *TandoorService {
 	return &TandoorService{
 		BaseURL: os.Getenv("TANDOOR_URL"),
-		Token:   os.Getenv("TANDOOR_BEARER_TOKEN"),
 	}
 }
 

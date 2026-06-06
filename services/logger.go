@@ -20,6 +20,9 @@ type LogEntry struct {
 var (
 	subscribers = make(map[chan LogEntry]bool)
 	subMu       sync.Mutex
+	logBuffer   []LogEntry
+	bufferMu    sync.RWMutex
+	maxBuffer   = 2000
 )
 
 // Subscribe adds a new subscriber channel
@@ -67,6 +70,13 @@ func broadcast(entry LogEntry) {
 		fmt.Println(string(b))
 	}
 
+	bufferMu.Lock()
+	logBuffer = append(logBuffer, entry)
+	if len(logBuffer) > maxBuffer {
+		logBuffer = logBuffer[len(logBuffer)-maxBuffer:]
+	}
+	bufferMu.Unlock()
+
 	subMu.Lock()
 	defer subMu.Unlock()
 	for ch := range subscribers {
@@ -75,4 +85,16 @@ func broadcast(entry LogEntry) {
 		default:
 		}
 	}
+}
+
+func GetLogsForCorrelationID(cid string) []LogEntry {
+	bufferMu.RLock()
+	defer bufferMu.RUnlock()
+	var entries []LogEntry
+	for _, entry := range logBuffer {
+		if entry.CorrelationID == cid {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
 }

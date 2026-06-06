@@ -21,6 +21,7 @@ func main() {
 	batchFile := flag.String("file", "", "Path to txt file with URLs for batch import")
 	spaceID := flag.String("space", "", "Tandoor Space ID for CLI import")
 	lang := flag.String("lang", "Polish", "Target language for recipes (e.g., Polish, English, German)")
+	token := flag.String("token", "", "Tandoor bearer token for CLI import")
 	flag.Parse()
 
 	// Load .env file
@@ -49,7 +50,11 @@ func main() {
 
 	// CLI Batch Mode
 	if *batchFile != "" {
-		runBatchCLI(h, *batchFile, *spaceID, *lang)
+		if *token == "" {
+			fmt.Println("Error: --token is required in CLI mode")
+			os.Exit(1)
+		}
+		runBatchCLI(h, *batchFile, *spaceID, *token, *lang)
 		return
 	}
 
@@ -57,9 +62,8 @@ func main() {
 	runServer(h)
 }
 
-func runBatchCLI(h *api.Handler, filePath string, spaceID string, lang string) {
+func runBatchCLI(h *api.Handler, filePath string, spaceID string, token string, lang string) {
 	cid := fmt.Sprintf("batch-%d", time.Now().Unix())
-	token := os.Getenv("TANDOOR_BEARER_TOKEN")
 	services.LogJSON(cid, "CLI", fmt.Sprintf("Starting CLI batch import from %s in space %s (Target Language: %s)", filePath, spaceID, lang), "INFO")
 
 	file, err := os.Open(filePath)
@@ -124,6 +128,11 @@ func runServer(h *api.Handler) {
 	e.POST("/import-custom", h.ImportRecipeCustom)
     e.GET("/import/:CorrelationID", h.ShowImportProgress)
     e.DELETE("/api/recipe/:id", h.DeleteRecipe)
+
+	// MCP Server (SSE Mode)
+	mcpServer := api.NewMCPServer(h)
+	e.GET("/sse", echo.WrapHandler(mcpServer.SSEHandler()))
+	e.POST("/message", echo.WrapHandler(mcpServer.MessageHandler()))
 
 	port := os.Getenv("PORT")
 	if port == "" {

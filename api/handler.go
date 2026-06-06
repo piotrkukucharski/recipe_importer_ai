@@ -13,6 +13,7 @@ import (
 	"recipe_importer_ai/services"
 	"runtime/debug"
 	"sync"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -86,6 +87,13 @@ type Handler struct {
 }
 
 func (h *Handler) getToken(c echo.Context) string {
+	authHeader := c.Request().Header.Get("Authorization")
+	if authHeader != "" {
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			return strings.TrimPrefix(authHeader, "Bearer ")
+		}
+		return authHeader
+	}
 	cookie, err := c.Cookie("tandoor_token")
 	if err == nil {
 		return cookie.Value
