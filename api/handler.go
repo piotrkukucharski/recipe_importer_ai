@@ -26,6 +26,8 @@ type ImportTask struct {
 	CorrelationID string    `json:"correlation_id"`
 	Status        string    `json:"status"` // "started", "imported", "finished"
 	CreatedAt     time.Time `json:"created_at"`
+	User          string    `json:"user"`
+	Space         string    `json:"space"`
 }
 
 type ImportTextRequest struct {
@@ -35,11 +37,13 @@ type ImportTextRequest struct {
 }
 
 type Handler struct {
-	Apify         *services.ApifyService
-	Gemini        *services.GeminiService
-	Tandoor       *services.TandoorService
-	imports       []*ImportTask
-	importsMu     sync.Mutex
+	Apify           *services.ApifyService
+	Gemini          *services.GeminiService
+	Tandoor         *services.TandoorService
+	imports         []*ImportTask
+	importsMu       sync.Mutex
+	tokenToUsername map[string]string
+	tokenToUserMu   sync.Mutex
 }
 
 func (h *Handler) getToken(c echo.Context) string {
@@ -48,6 +52,15 @@ func (h *Handler) getToken(c echo.Context) string {
 		return cookie.Value
 	}
 	return ""
+}
+
+func (h *Handler) getUsername(token string) string {
+	h.tokenToUserMu.Lock()
+	defer h.tokenToUserMu.Unlock()
+	if name, exists := h.tokenToUsername[token]; exists {
+		return name
+	}
+	return "Active User"
 }
 
 func (h *Handler) Login(c echo.Context) error {
@@ -64,6 +77,13 @@ func (h *Handler) Login(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
 	}
 
+	h.tokenToUserMu.Lock()
+	if h.tokenToUsername == nil {
+		h.tokenToUsername = make(map[string]string)
+	}
+	h.tokenToUsername[token] = req.Username
+	h.tokenToUserMu.Unlock()
+
 	cookie := new(http.Cookie)
 	cookie.Name = "tandoor_token"
 	cookie.Value = token
@@ -76,6 +96,15 @@ func (h *Handler) Login(c echo.Context) error {
 }
 
 func (h *Handler) Logout(c echo.Context) error {
+	token := h.getToken(c)
+	if token != "" {
+		h.tokenToUserMu.Lock()
+		if h.tokenToUsername != nil {
+			delete(h.tokenToUsername, token)
+		}
+		h.tokenToUserMu.Unlock()
+	}
+
 	cookie := new(http.Cookie)
 	cookie.Name = "tandoor_token"
 	cookie.Value = ""
@@ -147,7 +176,7 @@ func (h *Handler) ShowIndex(c echo.Context) error {
 	return templates.ExecuteTemplate(c.Response().Writer, "index.html", nil)
 }
 
-func (h *Handler) addImport(url, cid string) {
+func (h *Handler) addImport(url, cid, user, space string) {
 	h.importsMu.Lock()
 	defer h.importsMu.Unlock()
 	
@@ -163,7 +192,26 @@ func (h *Handler) addImport(url, cid string) {
 		CorrelationID: cid,
 		Status:        "started",
 		CreatedAt:     time.Now(),
+		User:          user,
+		Space:         space,
 	})
+
+	// Limit history to 100 elements
+	if len(h.imports) > 100 {
+		h.imports = h.imports[len(h.imports)-100:]
+	}
+}
+
+func (h *Handler) resolveSpaceName(spaceID string, token string, correlationID string) string {
+	spaces, err := h.Tandoor.GetSpaces(token, correlationID)
+	if err == nil {
+		for _, sp := range spaces {
+			if fmt.Sprintf("%d", sp.ID) == spaceID {
+				return sp.Name
+			}
+		}
+	}
+	return spaceID
 }
 
 func (h *Handler) updateImportStatus(cid string, status string) {
@@ -225,9 +273,12 @@ func (h *Handler) ImportRecipe(c echo.Context) error {
 	}
 
 	correlationID := c.Request().Header.Get("X-Correlation-ID")
-	services.LogJSON(correlationID, "API", fmt.Sprintf("Received import request for URL: %s in space %s (Lang: %s)", url, spaceID, lang), "INFO")
+	username := h.getUsername(token)
+	spaceName := h.resolveSpaceName(spaceID, token, correlationID)
 
-	go h.ProcessURL(url, spaceID, lang, token, correlationID)
+	services.LogJSON(correlationID, "API", fmt.Sprintf("Received import request for URL: %s in space %s (Lang: %s)", url, spaceName, lang), "INFO")
+
+	go h.ProcessURL(url, spaceID, spaceName, username, lang, token, correlationID)
 
 	return c.JSON(http.StatusAccepted, map[string]interface{}{
 		"message":        "Import started",
@@ -256,9 +307,12 @@ func (h *Handler) ImportRecipeFromText(c echo.Context) error {
 	}
 
 	correlationID := c.Request().Header.Get("X-Correlation-ID")
-	services.LogJSON(correlationID, "API", fmt.Sprintf("Received text import request in space %s (Lang: %s)", req.SpaceID, req.Lang), "INFO")
+	username := h.getUsername(token)
+	spaceName := h.resolveSpaceName(req.SpaceID, token, correlationID)
 
-	go h.ProcessText(req.Text, req.SpaceID, req.Lang, token, correlationID)
+	services.LogJSON(correlationID, "API", fmt.Sprintf("Received text import request in space %s (Lang: %s)", spaceName, req.Lang), "INFO")
+
+	go h.ProcessText(req.Text, req.SpaceID, spaceName, username, req.Lang, token, correlationID)
 
 	return c.JSON(http.StatusAccepted, map[string]interface{}{
 		"message":        "Import started",
@@ -294,7 +348,10 @@ func (h *Handler) ImportRecipeFromImages(c echo.Context) error {
 		correlationID = fmt.Sprintf("img-%d", time.Now().UnixNano())
 	}
 	
-	services.LogJSON(correlationID, "API", fmt.Sprintf("Received image import request for %d images in space %s (Lang: %s)", len(files), spaceID, lang), "INFO")
+	username := h.getUsername(token)
+	spaceName := h.resolveSpaceName(spaceID, token, correlationID)
+
+	services.LogJSON(correlationID, "API", fmt.Sprintf("Received image import request for %d images in space %s (Lang: %s)", len(files), spaceName, lang), "INFO")
 
 	// Read all files into memory
 	var images [][]byte
@@ -320,7 +377,7 @@ func (h *Handler) ImportRecipeFromImages(c echo.Context) error {
 		mimeTypes = append(mimeTypes, mimeType)
 	}
 
-	go h.ProcessImages(images, mimeTypes, spaceID, lang, token, correlationID)
+	go h.ProcessImages(images, mimeTypes, spaceID, spaceName, username, lang, token, correlationID)
 
 	return c.JSON(http.StatusAccepted, map[string]interface{}{
 		"message":        "Import started",
@@ -333,8 +390,8 @@ func (h *Handler) ImportRecipeFromImages(c echo.Context) error {
 	})
 }
 
-func (h *Handler) ProcessImages(images [][]byte, mimeTypes []string, spaceID string, lang string, token string, cid string) {
-	h.addImport("Import from Images", cid)
+func (h *Handler) ProcessImages(images [][]byte, mimeTypes []string, spaceID string, spaceName string, username string, lang string, token string, cid string) {
+	h.addImport("Import from Images", cid, username, spaceName)
 	services.LogJSON(cid, "Background", fmt.Sprintf("Starting processing for %d images", len(images)), "INFO")
 
 	ctx := context.Background()
@@ -386,8 +443,8 @@ func (h *Handler) ProcessImages(images [][]byte, mimeTypes []string, spaceID str
 	}
 }
 
-func (h *Handler) ProcessText(text string, spaceID string, lang string, token string, cid string) {
-	h.addImport("Import from Text", cid)
+func (h *Handler) ProcessText(text string, spaceID string, spaceName string, username string, lang string, token string, cid string) {
+	h.addImport("Import from Text", cid, username, spaceName)
 	services.LogJSON(cid, "Background", "Starting processing for raw text", "INFO")
 
 	ctx := context.Background()
@@ -427,8 +484,8 @@ func (h *Handler) ProcessText(text string, spaceID string, lang string, token st
 	}
 }
 
-func (h *Handler) ProcessURL(url string, spaceID string, lang string, token string, cid string) {
-	h.addImport(url, cid)
+func (h *Handler) ProcessURL(url string, spaceID string, spaceName string, username string, lang string, token string, cid string) {
+	h.addImport(url, cid, username, spaceName)
 	services.LogJSON(cid, "Background", fmt.Sprintf("Starting processing for URL: %s", url), "INFO")
 
 	items, err := h.Apify.ScrapeItems(url, cid)
