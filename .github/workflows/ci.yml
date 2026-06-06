@@ -2,6 +2,8 @@ name: Build & Package Container
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   pull_request:
@@ -109,12 +111,14 @@ jobs:
 
       # Save the image as a tarball to "zapisywać" (save) the container to the workflow run
       - name: Save Docker Image as Tarball Artifact
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           mkdir -p /tmp/artifacts
           docker save -o /tmp/artifacts/recipe_importer_ai.tar recipe-importer-ai:latest
 
       # Upload the tarball as a downloadable Github Actions artifact
       - name: Upload Container Artifact
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
           name: recipe-importer-ai-container
