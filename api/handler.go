@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"recipe_importer_ai/services"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -20,6 +21,43 @@ import (
 var templatesFS embed.FS
 
 var templates = template.Must(template.ParseFS(templatesFS, "templates/index.html", "templates/progress.html", "templates/imports.html"))
+
+var (
+	VersionBranch    = "unknown"
+	VersionTag       = ""
+	VersionCommit    = "unknown"
+	VersionBuildDate = "unknown"
+)
+
+func init() {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, setting := range info.Settings {
+			switch setting.Key {
+			case "vcs.revision":
+				if VersionCommit == "unknown" {
+					VersionCommit = setting.Value
+				}
+			case "vcs.time":
+				if VersionBuildDate == "unknown" {
+					VersionBuildDate = setting.Value
+				}
+			}
+		}
+	}
+}
+
+func (h *Handler) getTemplateData(extra map[string]interface{}) map[string]interface{} {
+	data := map[string]interface{}{
+		"VersionBranch":    VersionBranch,
+		"VersionTag":       VersionTag,
+		"VersionCommit":    VersionCommit,
+		"VersionBuildDate": VersionBuildDate,
+	}
+	for k, v := range extra {
+		data[k] = v
+	}
+	return data
+}
 
 type ImportTask struct {
 	URL           string    `json:"url"`
@@ -173,7 +211,7 @@ func (h *Handler) GetLogsByCorrelationID(c echo.Context) error {
 func (h *Handler) ShowIndex(c echo.Context) error {
 	c.Response().Header().Set(echo.HeaderContentType, echo.MIMETextHTMLCharsetUTF8)
 	c.Response().WriteHeader(http.StatusOK)
-	return templates.ExecuteTemplate(c.Response().Writer, "index.html", nil)
+	return templates.ExecuteTemplate(c.Response().Writer, "index.html", h.getTemplateData(nil))
 }
 
 func (h *Handler) addImport(url, cid, user, space string) {
@@ -242,7 +280,7 @@ func (h *Handler) ShowImports(c echo.Context) error {
 
 	c.Response().Header().Set(echo.HeaderContentType, echo.MIMETextHTMLCharsetUTF8)
 	c.Response().WriteHeader(http.StatusOK)
-	return templates.ExecuteTemplate(c.Response().Writer, "imports.html", data)
+	return templates.ExecuteTemplate(c.Response().Writer, "imports.html", h.getTemplateData(data))
 }
 
 func (h *Handler) GetSpaces(c echo.Context) error {
@@ -605,5 +643,5 @@ func (h *Handler) ShowImportProgress(c echo.Context) error {
 	}
 	c.Response().Header().Set(echo.HeaderContentType, echo.MIMETextHTMLCharsetUTF8)
 	c.Response().WriteHeader(http.StatusOK)
-	return templates.ExecuteTemplate(c.Response().Writer, "progress.html", data)
+	return templates.ExecuteTemplate(c.Response().Writer, "progress.html", h.getTemplateData(data))
 }

@@ -13,8 +13,16 @@ RUN go mod download
 # Kopiowanie kodu źródłowego
 COPY . .
 
+# Argumenty budowania dla wersji
+ARG VERSION_BRANCH=unknown
+ARG VERSION_TAG=
+ARG VERSION_COMMIT=unknown
+ARG VERSION_BUILD_DATE=unknown
+
 # Kompilacja aplikacji
-RUN CGO_ENABLED=0 GOOS=linux go build -o recipe_importer_ai main.go
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags "-X recipe_importer_ai/api.VersionBranch=${VERSION_BRANCH} -X recipe_importer_ai/api.VersionTag=${VERSION_TAG} -X 'recipe_importer_ai/api.VersionCommit=${VERSION_COMMIT}' -X 'recipe_importer_ai/api.VersionBuildDate=${VERSION_BUILD_DATE}'" \
+    -o recipe_importer_ai main.go
 
 # Etap 2: Finalny obraz
 FROM alpine:latest
