@@ -1,15 +1,16 @@
 package models
 
 type Recipe struct {
-	Name         string     `json:"name"`
-	Description  string     `json:"description"`
-	WorkingTime  int        `json:"working_time"`
-	WaitingTime  int        `json:"waiting_time"`
-	Servings     int        `json:"servings"`
-	SourceURL    string     `json:"source_url"`
-	ImageURL     string     `json:"image_url"`
-	Keywords     []string   `json:"keywords"`
-	Steps        []Step     `json:"steps"`
+	Name           string     `json:"name"`
+	Description    string     `json:"description"`
+	WorkingTime    int        `json:"working_time"`
+	WaitingTime    int        `json:"waiting_time"`
+	Servings       int        `json:"servings"`
+	SourceURL      string     `json:"source_url"`
+	ImageURL       string     `json:"image_url"`
+	Keywords       []string   `json:"keywords"`
+	Steps          []Step     `json:"steps"`
+	DishImageIndex *int       `json:"dish_image_index,omitempty"`
 }
 
 type Step struct {

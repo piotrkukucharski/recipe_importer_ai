@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"recipe_importer_ai/models"
+	"strings"
 	"time"
 )
 
@@ -301,6 +302,72 @@ func (s *TandoorService) updateImageMultipartWithRetry(recipeID int, imageURL st
 		defer resp.Body.Close()
 
 		LogJSON(correlationID, "Tandoor", "Image URL successfully updated via multipart", "INFO")
+		return nil
+	}
+	return lastErr
+}
+
+func (s *TandoorService) UpdateImageFileMultipartWithRetry(recipeID int, imgData []byte, mimeType string, spaceID string, token string, correlationID string) error {
+	var lastErr error
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			time.Sleep(retryInterval * time.Duration(i))
+		}
+
+		if spaceID != "" {
+			if err := s.switchSpace(spaceID, token, correlationID); err != nil {
+				lastErr = err
+				continue
+			}
+		}
+
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+
+		ext := ".jpg"
+		if strings.Contains(mimeType, "png") {
+			ext = ".png"
+		} else if strings.Contains(mimeType, "webp") {
+			ext = ".webp"
+		} else if strings.Contains(mimeType, "gif") {
+			ext = ".gif"
+		}
+		filename := fmt.Sprintf("recipe_image_%d%s", recipeID, ext)
+
+		part, err := writer.CreateFormFile("image", filename)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		_, err = part.Write(imgData)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		writer.Close()
+
+		path := fmt.Sprintf("/api/recipe/%d/image/", recipeID)
+		req, _ := http.NewRequest("PUT", s.BaseURL+path, body)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode >= 400 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("tandoor error %d: %s", resp.StatusCode, string(bodyBytes))
+			LogJSON(correlationID, "Tandoor", fmt.Sprintf("Failed to update image file: %v", lastErr), "ERROR")
+			continue
+		}
+		defer resp.Body.Close()
+
+		LogJSON(correlationID, "Tandoor", "Image file successfully uploaded via multipart", "INFO")
 		return nil
 	}
 	return lastErr

@@ -120,6 +120,7 @@ func runServer(h *api.Handler) {
 	// API
 	e.GET("/import", h.ImportRecipe)
 	e.POST("/import-text", h.ImportRecipeFromText)
+	e.POST("/import-images", h.ImportRecipeFromImages)
     e.GET("/import/:CorrelationID", h.ShowImportProgress)
     e.DELETE("/api/recipe/:id", h.DeleteRecipe)
 

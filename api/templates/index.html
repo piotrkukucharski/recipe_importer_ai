@@ -10,7 +10,7 @@
         h1 { margin-top: 0; color: #333; }
         .form-group { margin-bottom: 20px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
-        select, input[type="text"], input[type="password"], textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 14px; font-family: inherit; }
+        select, input[type="text"], input[type="password"], input[type="file"], textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 14px; font-family: inherit; }
         button { background: #28a745; color: white; border: none; padding: 12px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%; transition: background 0.3s; }
         button:hover { background: #218838; }
         button.secondary { background: #6c757d; margin-top: 10px; }
@@ -88,6 +88,14 @@
                 <textarea id="recipeText" placeholder="Paste the recipe text here (ingredients, steps, etc.)..." rows="8" style="resize: vertical;"></textarea>
             </div>
             <button id="importTextBtn" class="secondary" style="margin-top: 0;">Import from Text</button>
+
+            <hr style="margin: 25px 0; border: 0; border-top: 1px solid #ddd;">
+
+            <div class="form-group">
+                <label for="recipeImages">Recipe Images (one or more):</label>
+                <input type="file" id="recipeImages" multiple accept="image/*">
+            </div>
+            <button id="importImagesBtn" class="secondary" style="margin-top: 0;">Import from Images</button>
         </div>
 
         <div id="status"></div>
@@ -109,6 +117,8 @@
         const importBtn = document.getElementById('importBtn');
         const recipeTextInput = document.getElementById('recipeText');
         const importTextBtn = document.getElementById('importTextBtn');
+        const recipeImagesInput = document.getElementById('recipeImages');
+        const importImagesBtn = document.getElementById('importImagesBtn');
         const statusDiv = document.getElementById('status');
         const logContainer = document.getElementById('log-container');
 
@@ -294,6 +304,54 @@
             })
             .finally(() => {
                 importTextBtn.disabled = false;
+            });
+        });
+
+        importImagesBtn.addEventListener('click', () => {
+            const files = recipeImagesInput.files;
+            const space = spaceSelect.value;
+            const lang = langSelect.value;
+            if (files.length === 0) return alert('Please select at least one image!');
+
+            statusDiv.style.display = 'block';
+            statusDiv.className = '';
+            statusDiv.textContent = 'Starting image import...';
+            importImagesBtn.disabled = true;
+
+            const formData = new FormData();
+            formData.append('space', space);
+            formData.append('lang', lang);
+            for (let i = 0; i < files.length; i++) {
+                formData.append('images', files[i]);
+            }
+
+            fetch('/import-images', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => {
+                if (res.status === 202) {
+                    return res.json();
+                } else if (res.status === 401) {
+                    statusDiv.className = 'error';
+                    statusDiv.textContent = 'Session expired. Please refresh and login again.';
+                    showLogin();
+                    throw new Error('Unauthorized');
+                } else {
+                    throw new Error('Server error');
+                }
+            })
+            .then(data => {
+                window.location.href = '/import/' + data.correlation_id;
+            })
+            .catch(err => {
+                if (err.message !== 'Unauthorized') {
+                    statusDiv.className = 'error';
+                    statusDiv.textContent = 'An error occurred while scheduling the import.';
+                }
+            })
+            .finally(() => {
+                importImagesBtn.disabled = false;
             });
         });
     </script>

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"os"
 	"recipe_importer_ai/services"
@@ -268,6 +269,115 @@ func (h *Handler) ImportRecipeFromText(c echo.Context) error {
 		},
 	})
 }
+
+func (h *Handler) ImportRecipeFromImages(c echo.Context) error {
+	form, err := c.MultipartForm()
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Failed to parse multipart form"})
+	}
+
+	spaceID := c.FormValue("space")
+	lang := c.FormValue("lang")
+
+	files := form.File["images"]
+	if len(files) == 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "No images provided"})
+	}
+
+	token := h.getToken(c)
+	if token == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+	}
+
+	correlationID := c.Request().Header.Get("X-Correlation-ID")
+	if correlationID == "" {
+		correlationID = fmt.Sprintf("img-%d", time.Now().UnixNano())
+	}
+	
+	services.LogJSON(correlationID, "API", fmt.Sprintf("Received image import request for %d images in space %s (Lang: %s)", len(files), spaceID, lang), "INFO")
+
+	// Read all files into memory
+	var images [][]byte
+	var mimeTypes []string
+	for _, fileHeader := range files {
+		file, err := fileHeader.Open()
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to open file: %v", err)})
+		}
+		
+		imgData, err := io.ReadAll(file)
+		file.Close()
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to read file: %v", err)})
+		}
+		
+		images = append(images, imgData)
+		
+		mimeType := fileHeader.Header.Get("Content-Type")
+		if mimeType == "" {
+			mimeType = http.DetectContentType(imgData)
+		}
+		mimeTypes = append(mimeTypes, mimeType)
+	}
+
+	go h.ProcessImages(images, mimeTypes, spaceID, lang, token, correlationID)
+
+	return c.JSON(http.StatusAccepted, map[string]interface{}{
+		"message":        "Import started",
+		"correlation_id": correlationID,
+		"debug": map[string]interface{}{
+			"space_id":    spaceID,
+			"lang":        lang,
+			"image_count": len(files),
+		},
+	})
+}
+
+func (h *Handler) ProcessImages(images [][]byte, mimeTypes []string, spaceID string, lang string, token string, cid string) {
+	h.addImport("Import from Images", cid)
+	services.LogJSON(cid, "Background", fmt.Sprintf("Starting processing for %d images", len(images)), "INFO")
+
+	ctx := context.Background()
+
+	recipe, err := h.Gemini.ProcessRecipeFromImages(ctx, images, mimeTypes, lang, cid)
+	if err != nil {
+		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Gemini stage: %v", err), "ERROR")
+		h.updateImportStatus(cid, "finished")
+		return
+	}
+
+	if recipe == nil {
+		services.LogJSON(cid, "Background", "No recipe found in the uploaded images", "WARN")
+		h.updateImportStatus(cid, "finished")
+		return
+	}
+
+	createdRecipe, err := h.Tandoor.SaveRecipe(recipe, spaceID, token, cid)
+	if err != nil {
+		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Tandoor stage: %v", err), "ERROR")
+		h.updateImportStatus(cid, "finished")
+		return
+	}
+
+	if createdRecipe != nil {
+		recipeID := int(createdRecipe["id"].(float64))
+		
+		if recipe.DishImageIndex != nil && *recipe.DishImageIndex >= 0 && *recipe.DishImageIndex < len(images) {
+			idx := *recipe.DishImageIndex
+			services.LogJSON(cid, "Background", fmt.Sprintf("Gemini identified image at index %d as the finished dish. Uploading to Tandoor...", idx), "INFO")
+			
+			err = h.Tandoor.UpdateImageFileMultipartWithRetry(recipeID, images[idx], mimeTypes[idx], spaceID, token, cid)
+			if err != nil {
+				services.LogJSON(cid, "Background", fmt.Sprintf("Warning: failed to upload recipe image file: %v", err), "WARN")
+			}
+		}
+
+		services.BroadcastRecipe(cid, createdRecipe)
+		services.LogJSON(cid, "Background", fmt.Sprintf("Pipeline completed successfully for recipe: %s", recipe.Name), "INFO")
+		h.updateImportStatus(cid, "imported")
+	}
+}
+
 
 func (h *Handler) ProcessText(text string, spaceID string, lang string, token string, cid string) {
 	h.addImport("Import from Text", cid)
