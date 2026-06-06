@@ -101,7 +101,7 @@ Return ONLY the numeric score (e.g. "8"). Do not add any text.
 	return score, nil
 }
 
-func (s *GeminiService) ProcessRecipe(ctx context.Context, text string, imageURLs []string, targetLanguage string, correlationID string) (*models.Recipe, error) {
+func (s *GeminiService) ProcessRecipe(ctx context.Context, text string, imageURLs []string, targetLanguage string, correlationID string) ([]*models.Recipe, error) {
 	LogJSON(correlationID, "Gemini", fmt.Sprintf("Starting AI processing of extracted text (Target Language: %s)", targetLanguage), "INFO")
 	model := s.Client.GenerativeModel("gemini-3.1-pro-preview")
 
@@ -115,43 +115,48 @@ func (s *GeminiService) ProcessRecipe(ctx context.Context, text string, imageURL
 	imagesList := strings.Join(imageURLs, "\n")
 
 	prompt := fmt.Sprintf(`
-Process the following text and extract a culinary recipe from it.
+Process the following text and extract culinary recipes from it. A single source text can contain multiple recipes.
+Return all extracted recipes.
 
-If the text does NOT contain a recipe (e.g., it is a regular post, advertisement, travel info), return an empty JSON object: {}
+If the text does NOT contain any recipes (e.g., it is a regular post, advertisement, travel info), return an empty JSON object: {}
 
-IMPORTANT: The entire recipe, including its name, description, step names, instructions, and ingredient names/notes MUST be in the following language: %s. If the source text is in a different language, translate it accurately to %s.
+IMPORTANT: All recipes, including their names, descriptions, step names, instructions, and ingredient names/notes MUST be in the following language: %s. If the source text is in a different language, translate it accurately to %s.
 
 IMAGE SELECTION:
 Below is a list of image URLs found on the page. Analyze their filenames and paths.
-Pick ONE URL that most likely represents the FINAL dish (the finished meal).
+For each recipe, pick ONE URL that most likely represents the FINAL dish (the finished meal) for that specific recipe.
 Prioritize images that:
 1. Look like a main photo of the dish.
 2. Have higher resolution (judging by filename/path if possible).
 3. Are NOT icons, logos, avatars, or step-by-step photos.
-If you find a suitable image, put its URL in the "image_url" field. If none fit well, leave it empty.
+If you find a suitable image for a recipe, put its URL in the "image_url" field. If none fit well, leave it empty.
 
-Add keywords (tags) to the recipe. Choose appropriate ones from the list below or add your own if they fit (translate them to %s as well):
+Add keywords (tags) to each recipe. Choose appropriate ones from the list below or add your own if they fit (translate them to %s as well):
 vegan, vegetarian, for breakfast, for dinner, for lunch, snacks, for grill, coffee, drink, tea, smoothie, Polish cuisine, Japanese cuisine, Korean cuisine, Chinese cuisine, Sichuan cuisine, alcoholic drink, non-alcoholic drink, pancakes, cakes, soup, cream soup, bread, Italian cuisine, pasta, cheesecake, cake, salad.
 
-Return the result as a strictly formatted JSON object (not an array!) matching the structure below:
+Return the result as a strictly formatted JSON object matching the structure below:
 {
-  "name": "Recipe Name (in %s)",
-  "description": "Short description (in %s)",
-  "image_url": "the selected best image URL from the list provided below",
-  "working_time": preparation time in minutes (int),
-  "waiting_time": waiting time in minutes (int),
-  "servings": number of servings (int),
-  "keywords": ["tag1", "tag2"],
-  "steps": [
+  "recipes": [
     {
-      "name": "Step Name (in %s)",
-      "instruction": "Detailed step instruction (in %s)",
-      "ingredients": [
+      "name": "Recipe Name (in %s)",
+      "description": "Short description (in %s)",
+      "image_url": "the selected best image URL from the list provided below",
+      "working_time": preparation time in minutes (int),
+      "waiting_time": waiting time in minutes (int),
+      "servings": number of servings (int),
+      "keywords": ["tag1", "tag2"],
+      "steps": [
         {
-          "food": {"name": "ingredient name (in %s)"},
-          "unit": {"name": "unit (in %s), e.g., g, ml, pcs, tbsp"},
-          "amount": amount (float),
-          "note": "additional ingredient note (in %s)"
+          "name": "Step Name (in %s)",
+          "instruction": "Detailed step instruction (in %s)",
+          "ingredients": [
+            {
+              "food": {"name": "ingredient name (in %s)"},
+              "unit": {"name": "unit (in %s), e.g., g, ml, pcs, tbsp"},
+              "amount": amount (float),
+              "note": "additional ingredient note (in %s)"
+            }
+          ]
         }
       ]
     }
@@ -195,34 +200,10 @@ Text to process:
 	rawStr := fullResponse.String()
 	jsonStr := extractJSON(rawStr)
 
-	// Check if it's an empty object (not a recipe)
-	if jsonStr == "{}" || jsonStr == "" {
-		LogJSON(correlationID, "Gemini", "Text does not contain a recipe, skipping", "INFO")
-		return nil, nil
-	}
-
-	var recipe models.Recipe
-	if err := json.Unmarshal([]byte(jsonStr), &recipe); err != nil {
-		// Fallback for array response
-		var recipes []models.Recipe
-		if arrErr := json.Unmarshal([]byte(jsonStr), &recipes); arrErr == nil && len(recipes) > 0 {
-			LogJSON(correlationID, "Gemini", "Successfully unmarshaled from array format", "INFO")
-			return &recipes[0], nil
-		}
-		LogJSON(correlationID, "Gemini", fmt.Sprintf("Failed to unmarshal JSON: %v. Raw: %s", err, rawStr), "ERROR")
-		return nil, fmt.Errorf("failed to unmarshal gemini response: %w", err)
-	}
-
-	if recipe.Name == "" {
-		LogJSON(correlationID, "Gemini", "Recipe name is empty, likely not a recipe", "INFO")
-		return nil, nil
-	}
-
-	LogJSON(correlationID, "Gemini", fmt.Sprintf("Successfully unmarshaled recipe: %s", recipe.Name), "INFO")
-	return &recipe, nil
+	return s.parseRecipesJSON(jsonStr, rawStr, correlationID)
 }
 
-func (s *GeminiService) ProcessRecipeFromImages(ctx context.Context, images [][]byte, mimeTypes []string, targetLanguage string, correlationID string) (*models.Recipe, error) {
+func (s *GeminiService) ProcessRecipeFromImages(ctx context.Context, images [][]byte, mimeTypes []string, targetLanguage string, correlationID string) ([]*models.Recipe, error) {
 	LogJSON(correlationID, "Gemini", fmt.Sprintf("Starting AI processing of %d images (Target Language: %s)", len(images), targetLanguage), "INFO")
 	model := s.Client.GenerativeModel("gemini-3.1-pro-preview")
 
@@ -250,41 +231,45 @@ func (s *GeminiService) ProcessRecipeFromImages(ctx context.Context, images [][]
 	}
 
 	promptText := fmt.Sprintf(`
-Analyze the provided images of a culinary recipe. They may be photos of a cookbook, screenshots, or food photos.
-Extract the culinary recipe from these images.
+Analyze the provided images of culinary recipes. They may be photos of a cookbook, screenshots, or food photos.
+A single source can contain multiple recipes. Extract all recipes from these images.
 
-If the images do NOT contain a recipe (e.g., they are random photos, ads, etc.), return an empty JSON object: {}
+If the images do NOT contain any recipes (e.g., they are random photos, ads, etc.), return an empty JSON object: {}
 
-IMPORTANT: The entire recipe, including its name, description, step names, instructions, and ingredient names/notes MUST be in the following language: %s. If the source text in the images is in a different language, translate it accurately to %s.
+IMPORTANT: All recipes, including their names, descriptions, step names, instructions, and ingredient names/notes MUST be in the following language: %s. If the source text in the images is in a different language, translate it accurately to %s.
 
 DISH IMAGE SELECTION:
-Look at all the uploaded images. 
-Identify the 0-based index of the image (from the uploaded list) that contains the photo of the finished dish/meal (the final result).
-If one of the images is indeed a photo of the finished dish, put its 0-based index in the "dish_image_index" field.
-If none of the uploaded images represent the finished dish/meal (e.g., they only contain text, ingredients lists, or preparation steps), set "dish_image_index" to -1.
+Look at all the uploaded images.
+For each extracted recipe, identify the 0-based index of the image (from the uploaded list) that contains the photo of the finished dish/meal (the final result) for that specific recipe.
+If one of the images is indeed a photo of the finished dish for a recipe, put its 0-based index in the "dish_image_index" field for that recipe.
+If none of the uploaded images represent the finished dish/meal for that recipe (e.g., they only contain text, ingredients lists, or preparation steps), set "dish_image_index" to -1.
 
-Add keywords (tags) to the recipe. Choose appropriate ones from the list below or add your own if they fit (translate them to %s as well):
+Add keywords (tags) to each recipe. Choose appropriate ones from the list below or add your own if they fit (translate them to %s as well):
 vegan, vegetarian, for breakfast, for dinner, for lunch, snacks, for grill, coffee, drink, tea, smoothie, Polish cuisine, Japanese cuisine, Korean cuisine, Chinese cuisine, Sichuan cuisine, alcoholic drink, non-alcoholic drink, pancakes, cakes, soup, cream soup, bread, Italian cuisine, pasta, cheesecake, cake, salad.
 
-Return the result as a strictly formatted JSON object (not an array!) matching the structure below:
+Return the result as a strictly formatted JSON object matching the structure below:
 {
-  "name": "Recipe Name (in %s)",
-  "description": "Short description (in %s)",
-  "working_time": preparation time in minutes (int),
-  "waiting_time": waiting time in minutes (int),
-  "servings": number of servings (int),
-  "keywords": ["tag1", "tag2"],
-  "dish_image_index": 0-based index of the finished dish photo (int, or -1 if none),
-  "steps": [
+  "recipes": [
     {
-      "name": "Step Name (in %s)",
-      "instruction": "Detailed step instruction (in %s)",
-      "ingredients": [
+      "name": "Recipe Name (in %s)",
+      "description": "Short description (in %s)",
+      "working_time": preparation time in minutes (int),
+      "waiting_time": waiting time in minutes (int),
+      "servings": number of servings (int),
+      "keywords": ["tag1", "tag2"],
+      "dish_image_index": 0-based index of the finished dish photo (int, or -1 if none),
+      "steps": [
         {
-          "food": {"name": "ingredient name (in %s)"},
-          "unit": {"name": "unit (in %s), e.g., g, ml, pcs, tbsp"},
-          "amount": amount (float),
-          "note": "additional ingredient note (in %s)"
+          "name": "Step Name (in %s)",
+          "instruction": "Detailed step instruction (in %s)",
+          "ingredients": [
+            {
+              "food": {"name": "ingredient name (in %s)"},
+              "unit": {"name": "unit (in %s), e.g., g, ml, pcs, tbsp"},
+              "amount": amount (float),
+              "note": "additional ingredient note (in %s)"
+            }
+          ]
         }
       ]
     }
@@ -324,31 +309,57 @@ INGREDIENT EXTRACTION RULES:
 	rawStr := fullResponse.String()
 	jsonStr := extractJSON(rawStr)
 
-	// Check if it's an empty object (not a recipe)
+	return s.parseRecipesJSON(jsonStr, rawStr, correlationID)
+}
+
+type GeminiResponseWrapper struct {
+	Recipes []*models.Recipe `json:"recipes"`
+}
+
+func (s *GeminiService) parseRecipesJSON(jsonStr string, rawStr string, correlationID string) ([]*models.Recipe, error) {
+	// Check if it's empty
 	if jsonStr == "{}" || jsonStr == "" {
-		LogJSON(correlationID, "Gemini", "Images do not contain a recipe, skipping", "INFO")
+		LogJSON(correlationID, "Gemini", "JSON is empty, skipping", "INFO")
 		return nil, nil
 	}
 
-	var recipe models.Recipe
-	if err := json.Unmarshal([]byte(jsonStr), &recipe); err != nil {
-		// Fallback for array response
-		var recipes []models.Recipe
-		if arrErr := json.Unmarshal([]byte(jsonStr), &recipes); arrErr == nil && len(recipes) > 0 {
-			LogJSON(correlationID, "Gemini", "Successfully unmarshaled from array format", "INFO")
-			return &recipes[0], nil
+	// 1. Try to unmarshal into the wrapper struct
+	var wrapper GeminiResponseWrapper
+	if err := json.Unmarshal([]byte(jsonStr), &wrapper); err == nil && len(wrapper.Recipes) > 0 {
+		LogJSON(correlationID, "Gemini", fmt.Sprintf("Successfully unmarshaled %d recipes from wrapper format", len(wrapper.Recipes)), "INFO")
+		var validRecipes []*models.Recipe
+		for _, r := range wrapper.Recipes {
+			if r != nil && r.Name != "" {
+				validRecipes = append(validRecipes, r)
+			}
 		}
-		LogJSON(correlationID, "Gemini", fmt.Sprintf("Failed to unmarshal JSON: %v. Raw: %s", err, rawStr), "ERROR")
-		return nil, fmt.Errorf("failed to unmarshal gemini response: %w", err)
+		return validRecipes, nil
 	}
 
-	if recipe.Name == "" {
-		LogJSON(correlationID, "Gemini", "Recipe name is empty, likely not a recipe", "INFO")
-		return nil, nil
+	// 2. Try to unmarshal directly as an array of recipes
+	var recipesSlice []*models.Recipe
+	if err := json.Unmarshal([]byte(jsonStr), &recipesSlice); err == nil && len(recipesSlice) > 0 {
+		LogJSON(correlationID, "Gemini", fmt.Sprintf("Successfully unmarshaled %d recipes from array format", len(recipesSlice)), "INFO")
+		var validRecipes []*models.Recipe
+		for _, r := range recipesSlice {
+			if r != nil && r.Name != "" {
+				validRecipes = append(validRecipes, r)
+			}
+		}
+		return validRecipes, nil
 	}
 
-	LogJSON(correlationID, "Gemini", fmt.Sprintf("Successfully unmarshaled recipe from images: %s", recipe.Name), "INFO")
-	return &recipe, nil
+	// 3. Try to unmarshal as a single recipe
+	var singleRecipe models.Recipe
+	if err := json.Unmarshal([]byte(jsonStr), &singleRecipe); err == nil {
+		if singleRecipe.Name != "" {
+			LogJSON(correlationID, "Gemini", "Successfully unmarshaled 1 recipe from single format", "INFO")
+			return []*models.Recipe{&singleRecipe}, nil
+		}
+	}
+
+	LogJSON(correlationID, "Gemini", fmt.Sprintf("Failed to unmarshal JSON into any known recipe format. Raw: %s", rawStr), "ERROR")
+	return nil, fmt.Errorf("failed to unmarshal gemini response")
 }
 
 func extractJSON(s string) string {

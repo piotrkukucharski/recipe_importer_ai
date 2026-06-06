@@ -89,11 +89,11 @@ func TestFullImportFlow(t *testing.T) {
 	if len(items) > 0 {
 		item := items[0]
 		// 2. Process with Gemini
-		recipe, err := h.Gemini.ProcessRecipe(context.Background(), item.Text, item.Images, "Polish", "test-cid")
+		recipes, err := h.Gemini.ProcessRecipe(context.Background(), item.Text, item.Images, "Polish", "test-cid")
 		if err != nil {
 			t.Fatalf("Gemini error: %v", err)
 		}
-		if recipe != nil {
+		for _, recipe := range recipes {
 			recipe.SourceURL = testURL
 			recipe.ImageURL = item.ImageURL
 

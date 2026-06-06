@@ -339,45 +339,52 @@ func (h *Handler) ProcessImages(images [][]byte, mimeTypes []string, spaceID str
 
 	ctx := context.Background()
 
-	recipe, err := h.Gemini.ProcessRecipeFromImages(ctx, images, mimeTypes, lang, cid)
+	recipes, err := h.Gemini.ProcessRecipeFromImages(ctx, images, mimeTypes, lang, cid)
 	if err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Gemini stage: %v", err), "ERROR")
 		h.updateImportStatus(cid, "finished")
 		return
 	}
 
-	if recipe == nil {
-		services.LogJSON(cid, "Background", "No recipe found in the uploaded images", "WARN")
+	if len(recipes) == 0 {
+		services.LogJSON(cid, "Background", "No recipes found in the uploaded images", "WARN")
 		h.updateImportStatus(cid, "finished")
 		return
 	}
 
-	createdRecipe, err := h.Tandoor.SaveRecipe(recipe, spaceID, token, cid)
-	if err != nil {
-		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Tandoor stage: %v", err), "ERROR")
-		h.updateImportStatus(cid, "finished")
-		return
-	}
-
-	if createdRecipe != nil {
-		recipeID := int(createdRecipe["id"].(float64))
-		
-		if recipe.DishImageIndex != nil && *recipe.DishImageIndex >= 0 && *recipe.DishImageIndex < len(images) {
-			idx := *recipe.DishImageIndex
-			services.LogJSON(cid, "Background", fmt.Sprintf("Gemini identified image at index %d as the finished dish. Uploading to Tandoor...", idx), "INFO")
-			
-			err = h.Tandoor.UpdateImageFileMultipartWithRetry(recipeID, images[idx], mimeTypes[idx], spaceID, token, cid)
-			if err != nil {
-				services.LogJSON(cid, "Background", fmt.Sprintf("Warning: failed to upload recipe image file: %v", err), "WARN")
-			}
+	importedCount := 0
+	for _, recipe := range recipes {
+		createdRecipe, err := h.Tandoor.SaveRecipe(recipe, spaceID, token, cid)
+		if err != nil {
+			services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Tandoor stage for recipe %s: %v", recipe.Name, err), "ERROR")
+			continue
 		}
 
-		services.BroadcastRecipe(cid, createdRecipe)
-		services.LogJSON(cid, "Background", fmt.Sprintf("Pipeline completed successfully for recipe: %s", recipe.Name), "INFO")
+		if createdRecipe != nil {
+			recipeID := int(createdRecipe["id"].(float64))
+			
+			if recipe.DishImageIndex != nil && *recipe.DishImageIndex >= 0 && *recipe.DishImageIndex < len(images) {
+				idx := *recipe.DishImageIndex
+				services.LogJSON(cid, "Background", fmt.Sprintf("Gemini identified image at index %d as the finished dish for %s. Uploading to Tandoor...", idx, recipe.Name), "INFO")
+				
+				err = h.Tandoor.UpdateImageFileMultipartWithRetry(recipeID, images[idx], mimeTypes[idx], spaceID, token, cid)
+				if err != nil {
+					services.LogJSON(cid, "Background", fmt.Sprintf("Warning: failed to upload recipe image file: %v", err), "WARN")
+				}
+			}
+
+			services.BroadcastRecipe(cid, createdRecipe)
+			services.LogJSON(cid, "Background", fmt.Sprintf("Pipeline completed successfully for recipe: %s", recipe.Name), "INFO")
+			importedCount++
+		}
+	}
+
+	if importedCount > 0 {
 		h.updateImportStatus(cid, "imported")
+	} else {
+		h.updateImportStatus(cid, "finished")
 	}
 }
-
 
 func (h *Handler) ProcessText(text string, spaceID string, lang string, token string, cid string) {
 	h.addImport("Import from Text", cid)
@@ -385,29 +392,38 @@ func (h *Handler) ProcessText(text string, spaceID string, lang string, token st
 
 	ctx := context.Background()
 
-	recipe, err := h.Gemini.ProcessRecipe(ctx, text, []string{}, lang, cid)
+	recipes, err := h.Gemini.ProcessRecipe(ctx, text, []string{}, lang, cid)
 	if err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Gemini stage: %v", err), "ERROR")
 		h.updateImportStatus(cid, "finished")
 		return
 	}
 
-	if recipe == nil {
+	if len(recipes) == 0 {
+		services.LogJSON(cid, "Background", "No recipes found in the provided text", "WARN")
 		h.updateImportStatus(cid, "finished")
 		return
 	}
 
-	createdRecipe, err := h.Tandoor.SaveRecipe(recipe, spaceID, token, cid)
-	if err != nil {
-		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Tandoor stage: %v", err), "ERROR")
-		h.updateImportStatus(cid, "finished")
-		return
+	importedCount := 0
+	for _, recipe := range recipes {
+		createdRecipe, err := h.Tandoor.SaveRecipe(recipe, spaceID, token, cid)
+		if err != nil {
+			services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Tandoor stage for recipe %s: %v", recipe.Name, err), "ERROR")
+			continue
+		}
+
+		if createdRecipe != nil {
+			services.BroadcastRecipe(cid, createdRecipe)
+			services.LogJSON(cid, "Background", fmt.Sprintf("Pipeline completed successfully for recipe: %s", recipe.Name), "INFO")
+			importedCount++
+		}
 	}
 
-	if createdRecipe != nil {
-		services.BroadcastRecipe(cid, createdRecipe)
-		services.LogJSON(cid, "Background", fmt.Sprintf("Pipeline completed successfully for recipe: %s", recipe.Name), "INFO")
+	if importedCount > 0 {
 		h.updateImportStatus(cid, "imported")
+	} else {
+		h.updateImportStatus(cid, "finished")
 	}
 }
 
@@ -440,64 +456,72 @@ func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, 
 
 	fullText := item.Text
 
-	recipe, err := h.Gemini.ProcessRecipe(ctx, fullText, item.Images, lang, cid)
+	recipes, err := h.Gemini.ProcessRecipe(ctx, fullText, item.Images, lang, cid)
 	if err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Gemini stage for %s: %v", item.URL, err), "ERROR")
 		h.updateImportStatus(cid, "finished")
 		return
 	}
 
-	if recipe == nil {
+	if len(recipes) == 0 {
 		h.updateImportStatus(cid, "finished")
 		return
 	}
 
-	recipe.SourceURL = item.URL
+	importedCount := 0
+	for _, recipe := range recipes {
+		recipe.SourceURL = item.URL
 
-    // Visual image selection
-    bestImage := ""
-    maxScore := -1
-    
-    // Limit to top 5 candidates to avoid excessive API calls and time
-    candidates := item.Images
-    if len(candidates) > 5 {
-        candidates = candidates[:5]
-    }
+		// Visual image selection
+		bestImage := ""
+		maxScore := -1
+		
+		// Limit to top 5 candidates to avoid excessive API calls and time
+		candidates := item.Images
+		if len(candidates) > 5 {
+			candidates = candidates[:5]
+		}
 
-    services.LogJSON(cid, "Background", fmt.Sprintf("Starting visual evaluation for %d image candidates", len(candidates)), "INFO")
-    for _, imgURL := range candidates {
-        score, err := h.Gemini.EvaluateImage(ctx, imgURL, recipe.Name, cid)
-        if err != nil {
-            services.LogJSON(cid, "Background", fmt.Sprintf("Failed to evaluate image %s: %v", imgURL, err), "WARN")
-            continue
-        }
-        services.LogJSON(cid, "Background", fmt.Sprintf("Image score %d for: %s", score, imgURL), "INFO")
-        if score > maxScore {
-            maxScore = score
-            bestImage = imgURL
-        }
-        if score == 10 { break } // Perfect match found
-    }
+		services.LogJSON(cid, "Background", fmt.Sprintf("Starting visual evaluation for %d image candidates for %s", len(candidates), recipe.Name), "INFO")
+		for _, imgURL := range candidates {
+			score, err := h.Gemini.EvaluateImage(ctx, imgURL, recipe.Name, cid)
+			if err != nil {
+				services.LogJSON(cid, "Background", fmt.Sprintf("Failed to evaluate image %s: %v", imgURL, err), "WARN")
+				continue
+			}
+			services.LogJSON(cid, "Background", fmt.Sprintf("Image score %d for: %s", score, imgURL), "INFO")
+			if score > maxScore {
+				maxScore = score
+				bestImage = imgURL
+			}
+			if score == 10 { break } // Perfect match found
+		}
 
-    if bestImage != "" && maxScore >= 4 { // Threshold of 4 to avoid poor images
-        recipe.ImageURL = bestImage
-        services.LogJSON(cid, "Background", fmt.Sprintf("Selected best image with score %d: %s", maxScore, bestImage), "INFO")
-    } else if recipe.ImageURL == "" && item.ImageURL != "" {
-        recipe.ImageURL = item.ImageURL
-    }
+		if bestImage != "" && maxScore >= 4 { // Threshold of 4 to avoid poor images
+			recipe.ImageURL = bestImage
+			services.LogJSON(cid, "Background", fmt.Sprintf("Selected best image with score %d: %s", maxScore, bestImage), "INFO")
+		} else if recipe.ImageURL == "" && item.ImageURL != "" {
+			recipe.ImageURL = item.ImageURL
+		}
 
-	createdRecipe, err := h.Tandoor.SaveRecipe(recipe, spaceID, token, cid)
-	if err != nil {
-		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Tandoor stage for %s: %v", item.URL, err), "ERROR")
-		h.updateImportStatus(cid, "finished")
-		return
+		createdRecipe, err := h.Tandoor.SaveRecipe(recipe, spaceID, token, cid)
+		if err != nil {
+			services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Tandoor stage for %s (%s): %v", item.URL, recipe.Name, err), "ERROR")
+			continue
+		}
+
+		if createdRecipe != nil {
+			services.BroadcastRecipe(cid, createdRecipe)
+			services.LogJSON(cid, "Background", fmt.Sprintf("Pipeline completed successfully for recipe: %s", recipe.Name), "INFO")
+			importedCount++
+		}
 	}
 
-    if createdRecipe != nil {
-        services.BroadcastRecipe(cid, createdRecipe)
-	    services.LogJSON(cid, "Background", fmt.Sprintf("Pipeline completed successfully for recipe: %s", recipe.Name), "INFO")
-	    h.updateImportStatus(cid, "imported")
-    }
+	if importedCount > 0 {
+		h.updateImportStatus(cid, "imported")
+	} else {
+		h.updateImportStatus(cid, "finished")
+	}
 }
 
 func (h *Handler) DeleteRecipe(c echo.Context) error {
