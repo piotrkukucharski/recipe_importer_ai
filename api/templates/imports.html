@@ -56,7 +56,6 @@
                 <thead>
                     <tr>
                         <th>URL</th>
-                        <th>User</th>
                         <th>Space</th>
                         <th>Correlation ID</th>
                         <th>Status</th>
@@ -69,7 +68,6 @@
                         {{range .Imports}}
                         <tr>
                             <td class="url-cell" title="{{.URL}}"><a href="{{.URL}}" target="_blank" style="color: #007bff; text-decoration: none;">{{.URL}}</a></td>
-                            <td>{{.User}}</td>
                             <td>{{.Space}}</td>
                             <td class="cid-cell">{{.CorrelationID}}</td>
                             <td>
@@ -83,7 +81,7 @@
                         {{end}}
                     {{else}}
                         <tr>
-                            <td colspan="7" class="no-imports">
+                            <td colspan="6" class="no-imports">
                                 <p>No imports have been recorded yet.</p>
                                 <a href="/" class="btn btn-primary">Start Your First Import</a>
                             </td>
