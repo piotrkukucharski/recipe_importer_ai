@@ -12,6 +12,7 @@ import (
 	"recipe_importer_ai/infrastructure/tandoor"
 	"recipe_importer_ai/infrastructure/web"
 	"recipe_importer_ai/usecases/auth"
+	"recipe_importer_ai/usecases/cleanup"
 	"recipe_importer_ai/usecases/cookbook"
 	"recipe_importer_ai/usecases/copy_space"
 	"recipe_importer_ai/usecases/duplicates"
@@ -37,6 +38,7 @@ type ApiHandler struct {
 	TaskManager       *import_recipe.TaskManager
 	DeleteRecipeUC    *recipe.DeleteUseCase
 	CopyUC            *copy_space.CopyUseCase
+	CleanupUC         *cleanup.CleanupUseCase
 
 	tokenToUsername map[string]string
 	tokenToUserMu   sync.Mutex
@@ -55,6 +57,7 @@ func NewApiHandler(
 	tm *import_recipe.TaskManager,
 	dr *recipe.DeleteUseCase,
 	cp *copy_space.CopyUseCase,
+	cl *cleanup.CleanupUseCase,
 ) *ApiHandler {
 	return &ApiHandler{
 		Tandoor:           t,
@@ -69,6 +72,7 @@ func NewApiHandler(
 		TaskManager:       tm,
 		DeleteRecipeUC:    dr,
 		CopyUC:            cp,
+		CleanupUC:         cl,
 		tokenToUsername:   make(map[string]string),
 	}
 }
@@ -731,6 +735,44 @@ func (h *ApiHandler) CopySpaceStream(c echo.Context) error {
 	}
 
 	sendStatus("Copy process completed successfully!")
+	sendEvent("complete", map[string]string{"message": "Finished"})
+	return nil
+}
+
+func (h *ApiHandler) CleanupStream(c echo.Context) error {
+	itemType := c.QueryParam("type")
+	targetLang := c.QueryParam("target_lang")
+	spaceID := c.QueryParam("space_id")
+
+	token := h.getToken(c)
+	if token == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+	}
+	correlationID := c.Request().Header.Get("X-Correlation-ID")
+
+	w := c.Response()
+	w.Header().Set(echo.HeaderContentType, "text/event-stream")
+	w.Header().Set(echo.HeaderCacheControl, "no-cache")
+	w.Header().Set(echo.HeaderConnection, "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	sendEvent := func(event string, data interface{}) {
+		payload, _ := json.Marshal(data)
+		fmt.Fprintf(w.Writer, "event: %s\ndata: %s\n\n", event, string(payload))
+		w.Flush()
+	}
+
+	sendStatus := func(status string) {
+		sendEvent("status", map[string]string{"message": status})
+	}
+
+	ctx := c.Request().Context()
+	err := h.CleanupUC.Cleanup(ctx, itemType, targetLang, spaceID, token, correlationID, sendStatus)
+	if err != nil {
+		sendEvent("error", map[string]string{"message": err.Error()})
+		return nil
+	}
+
 	sendEvent("complete", map[string]string{"message": "Finished"})
 	return nil
 }

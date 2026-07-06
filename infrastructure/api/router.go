@@ -61,6 +61,7 @@ func SetupServer(h *ApiHandler, mcpServer *mcp.SSEHandler) *echo.Echo {
 	e.GET("/api/tools/books", h.GetRecipeBooks)
 	e.GET("/api/tools/space-recipes", h.GetSpaceRecipes)
 	e.GET("/api/tools/copy-space/stream", h.CopySpaceStream)
+	e.GET("/api/tools/cleanup/stream", h.CleanupStream)
 	e.GET("/api/tools/duplicates", h.GetDuplicates)
 	e.POST("/api/tools/clean-duplicates", h.CleanDuplicates)
 	e.GET("/api/tools/suggest-book-recipes/stream", h.SuggestBookRecipesStream)

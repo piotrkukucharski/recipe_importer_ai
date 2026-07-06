@@ -758,6 +758,69 @@ func (s *TandoorService) PatchWithRetry(path string, body interface{}, spaceID s
 	return nil, lastErr
 }
 
+func (s *TandoorService) PutWithRetry(path string, body interface{}, spaceID string, token string, correlationID string) (map[string]interface{}, error) {
+	var lastErr error
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			time.Sleep(retryInterval * time.Duration(i))
+		}
+
+		if spaceID != "" {
+			if err := s.switchSpace(spaceID, token, correlationID); err != nil {
+				lastErr = err
+				continue
+			}
+		}
+
+		var jsonBytes []byte
+		var err error
+		if body != nil {
+			jsonBytes, err = json.Marshal(body)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		var bodyReader io.Reader
+		if body != nil {
+			bodyReader = bytes.NewBuffer(jsonBytes)
+		}
+
+		req, _ := http.NewRequest("PUT", s.BaseURL+path, bodyReader)
+		req.Header.Set("Authorization", "Bearer "+token)
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode >= 500 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("server error %d: %s", resp.StatusCode, string(bodyBytes))
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("tandoor error %d: %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		var data map[string]interface{}
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		if len(bodyBytes) > 0 {
+			_ = json.Unmarshal(bodyBytes, &data)
+		}
+		return data, nil
+	}
+	return nil, lastErr
+}
+
 func (s *TandoorService) DeleteWithRetry(path string, spaceID string, token string, correlationID string) error {
 	var lastErr error
 	for i := 0; i < maxRetries; i++ {
@@ -820,4 +883,26 @@ func (s *TandoorService) GetKeywords(spaceID string, token string, correlationID
 		}
 	}
 	return allKeywords, nil
+}
+
+func (s *TandoorService) GetAllItems(path string, spaceID string, token string, correlationID string) ([]map[string]interface{}, error) {
+	var allItems []map[string]interface{}
+	for path != "" {
+		results, nextURL, err := s.getRawWithPagination(path, spaceID, token, correlationID)
+		if err != nil {
+			return nil, err
+		}
+		allItems = append(allItems, results...)
+
+		if nextURL != "" {
+			u, err := url.Parse(nextURL)
+			if err != nil {
+				break
+			}
+			path = u.RequestURI()
+		} else {
+			path = ""
+		}
+	}
+	return allItems, nil
 }

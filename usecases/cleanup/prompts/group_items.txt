@@ -1,0 +1,19 @@
+Analyze the following list of items (each item has an ID and Name).
+Your task is to identify items that are duplicates, near-duplicates, or semantically identical (e.g. "onion", "onions", "cebula", "cebule" should be grouped together).
+
+Target Language: {{.TargetLanguage}}
+
+Rules:
+1. Group duplicate/similar items together.
+2. For each group, choose a single canonical/correct name translated into the target language.
+3. Determine which item ID should be the "target" (preferred/main) item. The main item should ideally be the one that is already in the target language or has a clean name, and the other item IDs in the group will be merged INTO this target ID.
+4. Output the result ONLY as a JSON array of objects, where each object has:
+   - "target_id": integer ID of the main target item.
+   - "merge_ids": array of integer IDs of duplicates to merge into the target_id.
+   - "target_name": string (the translated canonical name in the target language to rename the target_id item to).
+5. If no duplicates are found, return an empty array [].
+6. Return ONLY the valid JSON array starting with [ and ending with ]. Do not wrap in markdown or add explanations.
+
+Items:
+{{range .Items}}- ID: {{.ID}}, Name: "{{.Name}}"
+{{end}}
