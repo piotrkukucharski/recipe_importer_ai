@@ -80,7 +80,7 @@ func runBatchCLI(h *api.Handler, filePath string, spaceID string, token string, 
 		url := strings.TrimSpace(scanner.Text())
 		if url != "" && !strings.HasPrefix(url, "#") {
 			count++
-			h.ProcessURL(url, spaceID, spaceID, "CLI User", lang, token, cid)
+			h.ProcessURL(url, spaceID, spaceID, "CLI User", lang, false, token, cid)
 		}
 	}
 

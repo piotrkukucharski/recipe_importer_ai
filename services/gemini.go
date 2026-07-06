@@ -101,8 +101,8 @@ Return ONLY the numeric score (e.g. "8"). Do not add any text.
 	return score, nil
 }
 
-func (s *GeminiService) ProcessRecipe(ctx context.Context, text string, imageURLs []string, targetLanguage string, correlationID string) ([]*models.Recipe, error) {
-	LogJSON(correlationID, "Gemini", fmt.Sprintf("Starting AI processing of extracted text (Target Language: %s)", targetLanguage), "INFO")
+func (s *GeminiService) ProcessRecipe(ctx context.Context, text string, imageURLs []string, targetLanguage string, multi bool, correlationID string) ([]*models.Recipe, error) {
+	LogJSON(correlationID, "Gemini", fmt.Sprintf("Starting AI processing of extracted text (Target Language: %s, Multi-Recipe: %v)", targetLanguage, multi), "INFO")
 	model := s.Client.GenerativeModel("gemini-3.1-pro-preview")
 
 	// Force JSON output
@@ -114,12 +114,18 @@ func (s *GeminiService) ProcessRecipe(ctx context.Context, text string, imageURL
 
 	imagesList := strings.Join(imageURLs, "\n")
 
+	recipeQuantityInstruction := "Process the following text and extract exactly ONE culinary recipe from it. Even if the source text could contain multiple recipes, assume there is only one main recipe and ignore any others."
+	if multi {
+		recipeQuantityInstruction = "Process the following text and extract all culinary recipes from it. A single source text can contain multiple recipes. Return all extracted recipes."
+	}
+
 	prompt := fmt.Sprintf(`
-Process the following text and extract culinary recipes from it. A single source text can contain multiple recipes.
-Return all extracted recipes.
+%s
 
 If the text does NOT contain any recipes (e.g., it is a regular post, advertisement, travel info), return an empty JSON object: {}
+`, recipeQuantityInstruction)
 
+	prompt += fmt.Sprintf(`
 IMPORTANT: All recipes, including their names, descriptions, step names, instructions, and ingredient names/notes MUST be in the following language: %s. If the source text is in a different language, translate it accurately to %s.
 
 IMAGE SELECTION:
@@ -203,8 +209,8 @@ Text to process:
 	return s.parseRecipesJSON(jsonStr, rawStr, correlationID)
 }
 
-func (s *GeminiService) ProcessRecipeFromImages(ctx context.Context, images [][]byte, mimeTypes []string, targetLanguage string, correlationID string) ([]*models.Recipe, error) {
-	LogJSON(correlationID, "Gemini", fmt.Sprintf("Starting AI processing of %d images (Target Language: %s)", len(images), targetLanguage), "INFO")
+func (s *GeminiService) ProcessRecipeFromImages(ctx context.Context, images [][]byte, mimeTypes []string, targetLanguage string, multi bool, correlationID string) ([]*models.Recipe, error) {
+	LogJSON(correlationID, "Gemini", fmt.Sprintf("Starting AI processing of %d images (Target Language: %s, Multi-Recipe: %v)", len(images), targetLanguage, multi), "INFO")
 	model := s.Client.GenerativeModel("gemini-3.1-pro-preview")
 
 	// Force JSON output
@@ -230,12 +236,18 @@ func (s *GeminiService) ProcessRecipeFromImages(ctx context.Context, images [][]
 		promptParts = append(promptParts, genai.ImageData(format, imgData))
 	}
 
+	recipeQuantityInstruction := "Analyze the provided images of culinary recipes. Extract exactly ONE culinary recipe from these images. Even if they contain multiple recipes, assume there is only one main recipe and ignore any others."
+	if multi {
+		recipeQuantityInstruction = "Analyze the provided images of culinary recipes. They may be photos of a cookbook, screenshots, or food photos. A single source can contain multiple recipes. Extract all recipes from these images."
+	}
+
 	promptText := fmt.Sprintf(`
-Analyze the provided images of culinary recipes. They may be photos of a cookbook, screenshots, or food photos.
-A single source can contain multiple recipes. Extract all recipes from these images.
+%s
 
 If the images do NOT contain any recipes (e.g., they are random photos, ads, etc.), return an empty JSON object: {}
+`, recipeQuantityInstruction)
 
+	promptText += fmt.Sprintf(`
 IMPORTANT: All recipes, including their names, descriptions, step names, instructions, and ingredient names/notes MUST be in the following language: %s. If the source text in the images is in a different language, translate it accurately to %s.
 
 DISH IMAGE SELECTION:
@@ -312,8 +324,8 @@ INGREDIENT EXTRACTION RULES:
 	return s.parseRecipesJSON(jsonStr, rawStr, correlationID)
 }
 
-func (s *GeminiService) ProcessRecipeFromImagesAndText(ctx context.Context, images [][]byte, mimeTypes []string, text string, targetLanguage string, correlationID string) ([]*models.Recipe, error) {
-	LogJSON(correlationID, "Gemini", fmt.Sprintf("Starting AI processing of %d images and text (Target Language: %s)", len(images), targetLanguage), "INFO")
+func (s *GeminiService) ProcessRecipeFromImagesAndText(ctx context.Context, images [][]byte, mimeTypes []string, text string, targetLanguage string, multi bool, correlationID string) ([]*models.Recipe, error) {
+	LogJSON(correlationID, "Gemini", fmt.Sprintf("Starting AI processing of %d images and text (Target Language: %s, Multi-Recipe: %v)", len(images), targetLanguage, multi), "INFO")
 	model := s.Client.GenerativeModel("gemini-3.1-pro-preview")
 
 	// Force JSON output
@@ -338,12 +350,18 @@ func (s *GeminiService) ProcessRecipeFromImagesAndText(ctx context.Context, imag
 		promptParts = append(promptParts, genai.ImageData(format, imgData))
 	}
 
+	recipeQuantityInstruction := "Analyze the provided images and the accompanying text of culinary recipes. Extract exactly ONE culinary recipe from these images and text. Even if they contain multiple recipes, assume there is only one main recipe and ignore any others."
+	if multi {
+		recipeQuantityInstruction = "Analyze the provided images and the accompanying text of culinary recipes. They may be photos of a cookbook, screenshots, food photos, and/or pasted text containing ingredients, steps, description. A single source can contain multiple recipes. Extract all recipes from these images and the text combined."
+	}
+
 	promptText := fmt.Sprintf(`
-Analyze the provided images and the accompanying text of culinary recipes. They may be photos of a cookbook, screenshots, food photos, and/or pasted text containing ingredients, steps, description.
-A single source can contain multiple recipes. Extract all recipes from these images and the text combined.
+%s
 
 If the images and text do NOT contain any recipes, return an empty JSON object: {}
+`, recipeQuantityInstruction)
 
+	promptText += fmt.Sprintf(`
 IMPORTANT: All recipes, including their names, descriptions, step names, instructions, and ingredient names/notes MUST be in the following language: %s. If the source text in the images or text is in a different language, translate it accurately to %s.
 
 DISH IMAGE SELECTION:

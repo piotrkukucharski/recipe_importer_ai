@@ -74,6 +74,7 @@ type ImportTextRequest struct {
 	Text    string `json:"text"`
 	SpaceID string `json:"space"`
 	Lang    string `json:"lang"`
+	Multi   bool   `json:"multi"`
 }
 
 type Handler struct {
@@ -310,6 +311,7 @@ func (h *Handler) ImportRecipe(c echo.Context) error {
 	url := c.QueryParam("url")
 	spaceID := c.QueryParam("space")
 	lang := c.QueryParam("lang")
+	multi := c.QueryParam("multi") == "true"
 	if url == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "url parameter is required"})
 	}
@@ -323,9 +325,9 @@ func (h *Handler) ImportRecipe(c echo.Context) error {
 	username := h.getUsername(token)
 	spaceName := h.resolveSpaceName(spaceID, token, correlationID)
 
-	services.LogJSON(correlationID, "API", fmt.Sprintf("Received import request for URL: %s in space %s (Lang: %s)", url, spaceName, lang), "INFO")
+	services.LogJSON(correlationID, "API", fmt.Sprintf("Received import request for URL: %s in space %s (Lang: %s, Multi-Recipe: %v)", url, spaceName, lang, multi), "INFO")
 
-	go h.ProcessURL(url, spaceID, spaceName, username, lang, token, correlationID)
+	go h.ProcessURL(url, spaceID, spaceName, username, lang, multi, token, correlationID)
 
 	return c.JSON(http.StatusAccepted, map[string]interface{}{
 		"message":        "Import started",
@@ -357,9 +359,9 @@ func (h *Handler) ImportRecipeFromText(c echo.Context) error {
 	username := h.getUsername(token)
 	spaceName := h.resolveSpaceName(req.SpaceID, token, correlationID)
 
-	services.LogJSON(correlationID, "API", fmt.Sprintf("Received text import request in space %s (Lang: %s)", spaceName, req.Lang), "INFO")
+	services.LogJSON(correlationID, "API", fmt.Sprintf("Received text import request in space %s (Lang: %s, Multi-Recipe: %v)", spaceName, req.Lang, req.Multi), "INFO")
 
-	go h.ProcessText(req.Text, req.SpaceID, spaceName, username, req.Lang, token, correlationID)
+	go h.ProcessText(req.Text, req.SpaceID, spaceName, username, req.Lang, req.Multi, token, correlationID)
 
 	return c.JSON(http.StatusAccepted, map[string]interface{}{
 		"message":        "Import started",
@@ -379,6 +381,7 @@ func (h *Handler) ImportRecipeFromImages(c echo.Context) error {
 
 	spaceID := c.FormValue("space")
 	lang := c.FormValue("lang")
+	multi := c.FormValue("multi") == "true"
 
 	files := form.File["images"]
 	if len(files) == 0 {
@@ -398,7 +401,7 @@ func (h *Handler) ImportRecipeFromImages(c echo.Context) error {
 	username := h.getUsername(token)
 	spaceName := h.resolveSpaceName(spaceID, token, correlationID)
 
-	services.LogJSON(correlationID, "API", fmt.Sprintf("Received image import request for %d images in space %s (Lang: %s)", len(files), spaceName, lang), "INFO")
+	services.LogJSON(correlationID, "API", fmt.Sprintf("Received image import request for %d images in space %s (Lang: %s, Multi-Recipe: %v)", len(files), spaceName, lang, multi), "INFO")
 
 	// Read all files into memory
 	var images [][]byte
@@ -424,7 +427,7 @@ func (h *Handler) ImportRecipeFromImages(c echo.Context) error {
 		mimeTypes = append(mimeTypes, mimeType)
 	}
 
-	go h.ProcessImages(images, mimeTypes, spaceID, spaceName, username, lang, token, correlationID)
+	go h.ProcessImages(images, mimeTypes, spaceID, spaceName, username, lang, multi, token, correlationID)
 
 	return c.JSON(http.StatusAccepted, map[string]interface{}{
 		"message":        "Import started",
@@ -441,17 +444,20 @@ func (h *Handler) ImportRecipeCustom(c echo.Context) error {
 	form, err := c.MultipartForm()
 	
 	var spaceID, lang, text string
+	var multi bool
 	var files []*multipart.FileHeader
 
 	if err == nil && form != nil {
 		spaceID = c.FormValue("space")
 		lang = c.FormValue("lang")
 		text = c.FormValue("text")
+		multi = c.FormValue("multi") == "true"
 		files = form.File["images"]
 	} else {
 		spaceID = c.FormValue("space")
 		lang = c.FormValue("lang")
 		text = c.FormValue("text")
+		multi = c.FormValue("multi") == "true"
 	}
 
 	if text == "" && len(files) == 0 {
@@ -496,8 +502,8 @@ func (h *Handler) ImportRecipeCustom(c echo.Context) error {
 			mimeTypes = append(mimeTypes, mimeType)
 		}
 
-		services.LogJSON(correlationID, "API", fmt.Sprintf("Received custom import request with text and %d images in space %s (Lang: %s)", len(files), spaceName, lang), "INFO")
-		go h.ProcessTextAndImages(images, mimeTypes, text, spaceID, spaceName, username, lang, token, correlationID)
+		services.LogJSON(correlationID, "API", fmt.Sprintf("Received custom import request with text and %d images in space %s (Lang: %s, Multi-Recipe: %v)", len(files), spaceName, lang, multi), "INFO")
+		go h.ProcessTextAndImages(images, mimeTypes, text, spaceID, spaceName, username, lang, multi, token, correlationID)
 	} else if len(files) > 0 {
 		// Only images
 		var images [][]byte
@@ -523,12 +529,12 @@ func (h *Handler) ImportRecipeCustom(c echo.Context) error {
 			mimeTypes = append(mimeTypes, mimeType)
 		}
 
-		services.LogJSON(correlationID, "API", fmt.Sprintf("Received custom import request with %d images in space %s (Lang: %s)", len(files), spaceName, lang), "INFO")
-		go h.ProcessImages(images, mimeTypes, spaceID, spaceName, username, lang, token, correlationID)
+		services.LogJSON(correlationID, "API", fmt.Sprintf("Received custom import request with %d images in space %s (Lang: %s, Multi-Recipe: %v)", len(files), spaceName, lang, multi), "INFO")
+		go h.ProcessImages(images, mimeTypes, spaceID, spaceName, username, lang, multi, token, correlationID)
 	} else {
 		// Only text
-		services.LogJSON(correlationID, "API", fmt.Sprintf("Received custom import request with text in space %s (Lang: %s)", spaceName, lang), "INFO")
-		go h.ProcessText(text, spaceID, spaceName, username, lang, token, correlationID)
+		services.LogJSON(correlationID, "API", fmt.Sprintf("Received custom import request with text in space %s (Lang: %s, Multi-Recipe: %v)", spaceName, lang, multi), "INFO")
+		go h.ProcessText(text, spaceID, spaceName, username, lang, multi, token, correlationID)
 	}
 
 	return c.JSON(http.StatusAccepted, map[string]interface{}{
@@ -539,17 +545,18 @@ func (h *Handler) ImportRecipeCustom(c echo.Context) error {
 			"lang":        lang,
 			"has_text":    text != "",
 			"image_count": len(files),
+			"multi":       multi,
 		},
 	})
 }
 
-func (h *Handler) ProcessTextAndImages(images [][]byte, mimeTypes []string, text string, spaceID string, spaceName string, username string, lang string, token string, cid string) {
+func (h *Handler) ProcessTextAndImages(images [][]byte, mimeTypes []string, text string, spaceID string, spaceName string, username string, lang string, multi bool, token string, cid string) {
 	h.addImport("Import from Text & Images", cid, username, spaceName)
-	services.LogJSON(cid, "Background", fmt.Sprintf("Starting processing for %d images and recipe text", len(images)), "INFO")
+	services.LogJSON(cid, "Background", fmt.Sprintf("Starting processing for %d images and recipe text (Multi-Recipe: %v)", len(images), multi), "INFO")
 
 	ctx := context.Background()
 
-	recipes, err := h.Gemini.ProcessRecipeFromImagesAndText(ctx, images, mimeTypes, text, lang, cid)
+	recipes, err := h.Gemini.ProcessRecipeFromImagesAndText(ctx, images, mimeTypes, text, lang, multi, cid)
 	if err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Gemini stage: %v", err), "ERROR")
 		h.updateImportStatus(cid, "finished")
@@ -596,13 +603,13 @@ func (h *Handler) ProcessTextAndImages(images [][]byte, mimeTypes []string, text
 	}
 }
 
-func (h *Handler) ProcessImages(images [][]byte, mimeTypes []string, spaceID string, spaceName string, username string, lang string, token string, cid string) {
+func (h *Handler) ProcessImages(images [][]byte, mimeTypes []string, spaceID string, spaceName string, username string, lang string, multi bool, token string, cid string) {
 	h.addImport("Import from Images", cid, username, spaceName)
-	services.LogJSON(cid, "Background", fmt.Sprintf("Starting processing for %d images", len(images)), "INFO")
+	services.LogJSON(cid, "Background", fmt.Sprintf("Starting processing for %d images (Multi-Recipe: %v)", len(images), multi), "INFO")
 
 	ctx := context.Background()
 
-	recipes, err := h.Gemini.ProcessRecipeFromImages(ctx, images, mimeTypes, lang, cid)
+	recipes, err := h.Gemini.ProcessRecipeFromImages(ctx, images, mimeTypes, lang, multi, cid)
 	if err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Gemini stage: %v", err), "ERROR")
 		h.updateImportStatus(cid, "finished")
@@ -649,13 +656,13 @@ func (h *Handler) ProcessImages(images [][]byte, mimeTypes []string, spaceID str
 	}
 }
 
-func (h *Handler) ProcessText(text string, spaceID string, spaceName string, username string, lang string, token string, cid string) {
+func (h *Handler) ProcessText(text string, spaceID string, spaceName string, username string, lang string, multi bool, token string, cid string) {
 	h.addImport("Import from Text", cid, username, spaceName)
-	services.LogJSON(cid, "Background", "Starting processing for raw text", "INFO")
+	services.LogJSON(cid, "Background", fmt.Sprintf("Starting processing for raw text (Multi-Recipe: %v)", multi), "INFO")
 
 	ctx := context.Background()
 
-	recipes, err := h.Gemini.ProcessRecipe(ctx, text, []string{}, lang, cid)
+	recipes, err := h.Gemini.ProcessRecipe(ctx, text, []string{}, lang, multi, cid)
 	if err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Gemini stage: %v", err), "ERROR")
 		h.updateImportStatus(cid, "finished")
@@ -690,9 +697,9 @@ func (h *Handler) ProcessText(text string, spaceID string, spaceName string, use
 	}
 }
 
-func (h *Handler) ProcessURL(url string, spaceID string, spaceName string, username string, lang string, token string, cid string) {
+func (h *Handler) ProcessURL(url string, spaceID string, spaceName string, username string, lang string, multi bool, token string, cid string) {
 	h.addImport(url, cid, username, spaceName)
-	services.LogJSON(cid, "Background", fmt.Sprintf("Starting processing for URL: %s", url), "INFO")
+	services.LogJSON(cid, "Background", fmt.Sprintf("Starting processing for URL: %s (Multi-Recipe: %v)", url, multi), "INFO")
 
 	items, err := h.Apify.ScrapeItems(url, cid)
 	if err != nil {
@@ -702,24 +709,29 @@ func (h *Handler) ProcessURL(url string, spaceID string, spaceName string, usern
 	}
 
 	if len(items) > 1 {
-		services.LogJSON(cid, "Background", fmt.Sprintf("Detected multiple items (%d), processing as profile/batch sequentially", len(items)), "INFO")
-		for _, item := range items {
-			h.processScrapedItem(item, spaceID, lang, token, cid)
+		if multi {
+			services.LogJSON(cid, "Background", fmt.Sprintf("Detected multiple items (%d), processing as profile/batch sequentially", len(items)), "INFO")
+			for _, item := range items {
+				h.processScrapedItem(item, spaceID, lang, multi, token, cid)
+			}
+		} else {
+			services.LogJSON(cid, "Background", fmt.Sprintf("Detected multiple items (%d) but multi-recipe mode is disabled. Processing only the first item.", len(items)), "INFO")
+			h.processScrapedItem(items[0], spaceID, lang, multi, token, cid)
 		}
 	} else if len(items) == 1 {
-		h.processScrapedItem(items[0], spaceID, lang, token, cid)
+		h.processScrapedItem(items[0], spaceID, lang, multi, token, cid)
 	} else {
 		services.LogJSON(cid, "Background", "No items found to process", "WARN")
 		h.updateImportStatus(cid, "finished")
 	}
 }
 
-func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, lang string, token string, cid string) {
+func (h *Handler) processScrapedItem(item services.ScrapedItem, spaceID string, lang string, multi bool, token string, cid string) {
 	ctx := context.Background()
 
 	fullText := item.Text
 
-	recipes, err := h.Gemini.ProcessRecipe(ctx, fullText, item.Images, lang, cid)
+	recipes, err := h.Gemini.ProcessRecipe(ctx, fullText, item.Images, lang, multi, cid)
 	if err != nil {
 		services.LogJSON(cid, "Background", fmt.Sprintf("Failure at Gemini stage for %s: %v", item.URL, err), "ERROR")
 		h.updateImportStatus(cid, "finished")

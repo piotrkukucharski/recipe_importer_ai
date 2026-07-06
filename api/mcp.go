@@ -105,7 +105,7 @@ func NewMCPServer(h *Handler) *server.SSEServer {
 
 		services.LogJSON(cid, "MCP", fmt.Sprintf("Received MCP import request for URL: %s in space %s (Lang: %s)", url, spaceName, lang), "INFO")
 
-		go h.ProcessURL(url, spaceID, spaceName, username, lang, token, cid)
+		go h.ProcessURL(url, spaceID, spaceName, username, lang, false, token, cid)
 
 		return mcp.NewToolResultText(fmt.Sprintf("Import started. Correlation ID: %s. Use get_import_status to monitor progress.", cid)), nil
 	})
@@ -151,7 +151,7 @@ func NewMCPServer(h *Handler) *server.SSEServer {
 
 		services.LogJSON(cid, "MCP", fmt.Sprintf("Received MCP text import request in space %s (Lang: %s)", spaceName, lang), "INFO")
 
-		go h.ProcessText(text, spaceID, spaceName, username, lang, token, cid)
+		go h.ProcessText(text, spaceID, spaceName, username, lang, false, token, cid)
 
 		return mcp.NewToolResultText(fmt.Sprintf("Import started. Correlation ID: %s. Use get_import_status to monitor progress.", cid)), nil
 	})
