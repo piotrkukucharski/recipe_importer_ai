@@ -120,7 +120,7 @@ func setupServer(h *api.Handler) *echo.Echo {
 
 	// Logger JSON
 	e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
-		Format: `{"time":"${time_rfc3339_nano}","correlation-id":"${header:X-Correlation-ID}","remote_ip":"${remote_ip}",` +
+		Format: `{"timestamp":"${time_rfc3339}","correlation-id":"${header:X-Correlation-ID}","remote_ip":"${remote_ip}",` +
 			`"host":"${host}","method":"${method}","uri":"${uri}","status":${status},` +
 			`"latency_human":"${latency_human}","bytes_out":${bytes_out}}` + "\n",
 	}))
