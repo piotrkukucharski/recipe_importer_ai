@@ -21,7 +21,7 @@ ARG VERSION_BUILD_DATE=unknown
 
 # Kompilacja aplikacji
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags "-X recipe_importer_ai/api.VersionBranch=${VERSION_BRANCH} -X recipe_importer_ai/api.VersionTag=${VERSION_TAG} -X 'recipe_importer_ai/api.VersionCommit=${VERSION_COMMIT}' -X 'recipe_importer_ai/api.VersionBuildDate=${VERSION_BUILD_DATE}'" \
+    -ldflags "-X recipe_importer_ai/infrastructure/web.VersionBranch=${VERSION_BRANCH} -X recipe_importer_ai/infrastructure/web.VersionTag=${VERSION_TAG} -X 'recipe_importer_ai/infrastructure/web.VersionCommit=${VERSION_COMMIT}' -X 'recipe_importer_ai/infrastructure/web.VersionBuildDate=${VERSION_BUILD_DATE}'" \
     -o recipe_importer_ai main.go
 
 # Etap 2: Finalny obraz

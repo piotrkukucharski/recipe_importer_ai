@@ -55,7 +55,7 @@ jobs:
       - name: Compile App
         run: |
           CGO_ENABLED=0 GOOS=linux go build -v \
-            -ldflags "-X recipe_importer_ai/api.VersionBranch=${VERSION_BRANCH} -X recipe_importer_ai/api.VersionTag=${VERSION_TAG} -X 'recipe_importer_ai/api.VersionCommit=${VERSION_COMMIT}' -X 'recipe_importer_ai/api.VersionBuildDate=${VERSION_BUILD_DATE}'" \
+            -ldflags "-X recipe_importer_ai/infrastructure/web.VersionBranch=${VERSION_BRANCH} -X recipe_importer_ai/infrastructure/web.VersionTag=${VERSION_TAG} -X 'recipe_importer_ai/infrastructure/web.VersionCommit=${VERSION_COMMIT}' -X 'recipe_importer_ai/infrastructure/web.VersionBuildDate=${VERSION_BUILD_DATE}'" \
             -o recipe_importer_ai main.go
 
   build-docker:
@@ -213,7 +213,7 @@ jobs:
       - name: Compile Binaries for Release
         run: |
           mkdir -p dist
-          LDFLAGS="-s -w -X recipe_importer_ai/api.VersionBranch=${VERSION_BRANCH} -X recipe_importer_ai/api.VersionTag=${VERSION_TAG} -X 'recipe_importer_ai/api.VersionCommit=${VERSION_COMMIT}' -X 'recipe_importer_ai/api.VersionBuildDate=${VERSION_BUILD_DATE}'"
+          LDFLAGS="-s -w -X recipe_importer_ai/infrastructure/web.VersionBranch=${VERSION_BRANCH} -X recipe_importer_ai/infrastructure/web.VersionTag=${VERSION_TAG} -X 'recipe_importer_ai/infrastructure/web.VersionCommit=${VERSION_COMMIT}' -X 'recipe_importer_ai/infrastructure/web.VersionBuildDate=${VERSION_BUILD_DATE}'"
           # Linux
           GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -v -ldflags="$LDFLAGS" -o dist/recipe_importer_ai-linux-amd64 main.go
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -v -ldflags="$LDFLAGS" -o dist/recipe_importer_ai-linux-arm64 main.go
