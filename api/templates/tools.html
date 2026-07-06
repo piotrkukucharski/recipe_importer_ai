@@ -83,8 +83,8 @@
 
         <div id="main-app">
             <div class="tabs">
-                <button class="tab-btn active" onclick="switchTab('duplicates-tab')">Znajdź duplikaty</button>
-                <button class="tab-btn" onclick="switchTab('book-tab')">Dodaj do książki (AI)</button>
+                <button class="tab-btn active" onclick="switchTab('duplicates-tab')">Find duplicates</button>
+                <button class="tab-btn" onclick="switchTab('book-tab')">Add to book (AI)</button>
             </div>
 
             <!-- Global Space Selection -->
@@ -102,28 +102,28 @@
             <!-- DUP TAB CONTENT -->
             <div id="duplicates-tab" class="tab-content active">
                 <div class="form-group">
-                    <button id="findDupsBtn" class="secondary">Szukaj duplikatów</button>
+                    <button id="findDupsBtn" class="secondary">Find duplicates</button>
                 </div>
                 <div id="dupsResults" style="margin-top: 20px;">
                     <!-- Results dynamically loaded -->
                 </div>
-                <button id="cleanDupsBtn" class="danger" style="display: none; margin-top: 20px;">Wyczyść zaznaczone grupy (orginał zostaw najnowszy)</button>
+                <button id="cleanDupsBtn" class="danger" style="display: none; margin-top: 20px;">Clean selected groups (keep newest original)</button>
             </div>
 
             <!-- BOOK TAB CONTENT -->
             <div id="book-tab" class="tab-content">
                 <div class="form-group">
-                    <label for="bookSelect">Wybierz książkę:</label>
+                    <label for="bookSelect">Select recipe book:</label>
                     <select id="bookSelect">
-                        <option value="">Wybierz najpierw przestrzeń...</option>
+                        <option value="">Select space first...</option>
                     </select>
                 </div>
-                <button id="analyzeBookBtn" class="secondary" disabled>Analizuj i dopasuj przepisy za pomocą AI</button>
+                <button id="analyzeBookBtn" class="secondary" disabled>Analyze and match recipes using AI</button>
 
                 <div id="bookResults" style="margin-top: 20px;">
                     <!-- AI Suggestions loaded here -->
                 </div>
-                <button id="addRecipesBtn" style="display: none; margin-top: 20px;">Dodaj wybrane przepisy do książki</button>
+                <button id="addRecipesBtn" style="display: none; margin-top: 20px;">Add selected recipes to book</button>
             </div>
         </div>
         {{template "footer" .}}
@@ -184,7 +184,7 @@
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
-            const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => btn.textContent.toLowerCase().includes(tabId.split('-')[0] === 'duplicates' ? 'duplikaty' : 'książki'));
+            const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => btn.textContent.toLowerCase().includes(tabId.split('-')[0] === 'duplicates' ? 'duplicates' : 'book'));
             if (activeBtn) activeBtn.classList.add('active');
             
             document.getElementById(tabId).classList.add('active');
@@ -225,7 +225,7 @@
             fetch('/api/tools/books?space_id=' + spaceID)
                 .then(res => res.json())
                 .then(data => {
-                    bookSelect.innerHTML = '<option value="">-- Wybierz książkę --</option>';
+                    bookSelect.innerHTML = '<option value="">-- Select recipe book --</option>';
                     if (data && data.length > 0) {
                         data.forEach(b => {
                             const opt = document.createElement('option');
@@ -235,12 +235,12 @@
                         });
                         analyzeBookBtn.disabled = false;
                     } else {
-                        bookSelect.innerHTML = '<option value="">Brak książek w tej przestrzeni</option>';
+                        bookSelect.innerHTML = '<option value="">No recipe books in this space</option>';
                     }
                 })
                 .catch(err => {
                     console.error(err);
-                    bookSelect.innerHTML = '<option value="">Błąd ładowania książek</option>';
+                    bookSelect.innerHTML = '<option value="">Error loading recipe books</option>';
                 });
         }
 
@@ -256,7 +256,7 @@
         // 1. DUPLICATES LOGIC
         findDupsBtn.addEventListener('click', () => {
             const spaceID = spaceSelect.value;
-            if (!spaceID) return alert('Wybierz przestrzeń!');
+            if (!spaceID) return alert('Please select a space!');
 
             showLoading(true);
             hideStatus();
@@ -269,17 +269,17 @@
                 .then(data => {
                     duplicateGroupsData = data.groups || [];
                     if (duplicateGroupsData.length === 0) {
-                        setStatus('Brak duplikatów w wybranej przestrzeni!', 'success');
+                        setStatus('No duplicates found in the selected space!', 'success');
                         return;
                     }
 
-                    setStatus(`Znaleziono ${duplicateGroupsData.length} grup duplikatów.`, 'info-msg');
+                    setStatus(`Found ${duplicateGroupsData.length} duplicate groups.`, 'info-msg');
                     renderDuplicates();
                     cleanDupsBtn.style.display = 'block';
                 })
                 .catch(err => {
                     console.error(err);
-                    setStatus('Wystąpił błąd podczas szukania duplikatów.', 'error');
+                    setStatus('An error occurred while searching for duplicates.', 'error');
                 })
                 .finally(() => {
                     showLoading(false);
@@ -298,9 +298,9 @@
                 header.innerHTML = `
                     <div style="display: flex; align-items: center; gap: 10px;">
                         <input type="checkbox" class="group-checkbox" data-index="${index}" style="transform: scale(1.2);">
-                        <strong style="font-size: 15px; color: #333;">Klucz: ${group.key}</strong>
+                        <strong style="font-size: 15px; color: #333;">Key: ${group.key}</strong>
                     </div>
-                    <span class="strategy-badge">${group.strategy === 'title' ? 'Tytuł' : 'Source URL'}</span>
+                    <span class="strategy-badge">${group.strategy === 'title' ? 'Title' : 'Source URL'}</span>
                 `;
                 card.appendChild(header);
 
@@ -317,9 +317,9 @@
                     item.innerHTML = `
                         <img class="recipe-img" src="${recipe.image || 'https://via.placeholder.com/60?text=No+Photo'}" alt="Recipe photo">
                         <div class="recipe-info">
-                            <h4 class="recipe-name">${recipe.name} ${isNewest ? '<span class="recipe-date">(NAJNOWSZY - ZOSTAJE)</span>' : '<span class="recipe-date" style="color: #dc3545;">(DO USUNIĘCIA)</span>'}</h4>
-                            <p class="recipe-desc">${recipe.description || 'Brak opisu'}</p>
-                            ${recipe.source_url ? `<a class="recipe-url" href="${recipe.source_url}" target="_blank">${recipe.source_url}</a>` : '<span style="font-size:11px; color:#aaa;">Brak URL</span>'}
+                            <h4 class="recipe-name">${recipe.name} ${isNewest ? '<span class="recipe-date">(NEWEST - KEEP)</span>' : '<span class="recipe-date" style="color: #dc3545;">(TO DELETE)</span>'}</h4>
+                            <p class="recipe-desc">${recipe.description || 'No description'}</p>
+                            ${recipe.source_url ? `<a class="recipe-url" href="${recipe.source_url}" target="_blank">${recipe.source_url}</a>` : '<span style="font-size:11px; color:#aaa;">No URL</span>'}
                         </div>
                         <span style="font-size: 11px; color: #6c757d; font-family: monospace;">ID: ${recipe.id}</span>
                     `;
@@ -336,10 +336,10 @@
                 .map(cb => parseInt(cb.getAttribute('data-index')));
 
             if (selectedIndices.length === 0) {
-                return alert('Zaznacz przynajmniej jedną grupę duplikatów do wyczyszczenia!');
+                return alert('Select at least one duplicate group to clean!');
             }
 
-            if (!confirm(`Czy na pewno chcesz usunąć duplikaty w ${selectedIndices.length} zaznaczonych grupach? Ta operacja jest nieodwracalna.`)) {
+            if (!confirm(`Are you sure you want to delete duplicates in the ${selectedIndices.length} selected groups? This action is irreversible.`)) {
                 return;
             }
 
@@ -360,7 +360,7 @@
             })
             .then(res => {
                 if (res.ok) {
-                    setStatus('Wyczyszczono zaznaczone duplikaty pomyślnie!', 'success');
+                    setStatus('Selected duplicates cleaned successfully!', 'success');
                     dupsResultsDiv.innerHTML = '';
                     cleanDupsBtn.style.display = 'none';
                 } else {
@@ -369,7 +369,7 @@
             })
             .catch(err => {
                 console.error(err);
-                setStatus('Błąd podczas czyszczenia duplikatów.', 'error');
+                setStatus('Error cleaning duplicates.', 'error');
             })
             .finally(() => {
                 showLoading(false);
@@ -381,7 +381,7 @@
         analyzeBookBtn.addEventListener('click', () => {
             const spaceID = spaceSelect.value;
             const bookID = bookSelect.value;
-            if (!spaceID || !bookID) return alert('Wybierz przestrzeń i książkę kucharską!');
+            if (!spaceID || !bookID) return alert('Please select a space and a recipe book!');
 
             showLoading(true);
             hideStatus();
@@ -401,13 +401,13 @@
             .then(data => {
                 const matched = data.suggested_recipes || [];
                 if (matched.length === 0) {
-                    setStatus('AI nie znalazło żadnych nowych przepisów pasujących do tej książki.', 'info-msg');
+                    setStatus('AI did not find any new recipes matching this recipe book.', 'info-msg');
                     return;
                 }
 
-                setStatus(`AI dopasowało ${matched.length} przepisów pasujących do wybranej książki.`, 'success');
+                setStatus(`AI matched ${matched.length} recipes for the selected recipe book.`, 'success');
                 
-                bookResultsDiv.innerHTML = '<h3>Sugerowane przepisy do dodania:</h3>';
+                bookResultsDiv.innerHTML = '<h3>Suggested recipes to add:</h3>';
                 const list = document.createElement('div');
                 list.className = 'recipe-list';
                 
@@ -419,7 +419,7 @@
                         <img class="recipe-img" src="${recipe.image || 'https://via.placeholder.com/60?text=No+Photo'}" alt="Recipe photo">
                         <div class="recipe-info">
                             <h4 class="recipe-name">${recipe.name}</h4>
-                            <p class="recipe-desc">${recipe.description || 'Brak opisu'}</p>
+                            <p class="recipe-desc">${recipe.description || 'No description'}</p>
                             ${recipe.source_url ? `<a class="recipe-url" href="${recipe.source_url}" target="_blank">${recipe.source_url}</a>` : ''}
                         </div>
                         <span style="font-size: 11px; color: #6c757d; font-family: monospace;">ID: ${recipe.id}</span>
@@ -432,7 +432,7 @@
             })
             .catch(err => {
                 console.error(err);
-                setStatus('Błąd podczas generowania rekomendacji AI.', 'error');
+                setStatus('Error generating AI recommendations.', 'error');
             })
             .finally(() => {
                 showLoading(false);
@@ -445,7 +445,7 @@
                 .map(cb => parseInt(cb.getAttribute('data-id')));
 
             if (selectedIDs.length === 0) {
-                return alert('Zaznacz przepisy, które chcesz dodać do książki!');
+                return alert('Please select recipes to add to the book!');
             }
 
             const spaceID = spaceSelect.value;
@@ -466,7 +466,7 @@
             })
             .then(res => {
                 if (res.ok) {
-                    setStatus(`Pomyślnie dodano ${selectedIDs.length} przepisów do książki!`, 'success');
+                    setStatus(`Successfully added ${selectedIDs.length} recipes to the book!`, 'success');
                     bookResultsDiv.innerHTML = '';
                     addRecipesBtn.style.display = 'none';
                 } else {
@@ -475,7 +475,7 @@
             })
             .catch(err => {
                 console.error(err);
-                setStatus('Wystąpił błąd podczas dodawania przepisów do książki.', 'error');
+                setStatus('An error occurred while adding recipes to the book.', 'error');
             })
             .finally(() => {
                 showLoading(false);
