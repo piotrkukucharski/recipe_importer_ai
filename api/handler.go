@@ -22,7 +22,7 @@ import (
 //go:embed templates/*
 var templatesFS embed.FS
 
-var templates = template.Must(template.ParseFS(templatesFS, "templates/index.html", "templates/progress.html", "templates/imports.html"))
+var templates = template.Must(template.ParseFS(templatesFS, "templates/index.html", "templates/progress.html", "templates/imports.html", "templates/tools.html"))
 
 var (
 	VersionBranch    = "unknown"
@@ -824,4 +824,306 @@ func (h *Handler) ShowImportProgress(c echo.Context) error {
 	c.Response().Header().Set(echo.HeaderContentType, echo.MIMETextHTMLCharsetUTF8)
 	c.Response().WriteHeader(http.StatusOK)
 	return templates.ExecuteTemplate(c.Response().Writer, "progress.html", h.getTemplateData(data))
+}
+
+func (h *Handler) ShowTools(c echo.Context) error {
+	c.Response().Header().Set(echo.HeaderContentType, echo.MIMETextHTMLCharsetUTF8)
+	c.Response().WriteHeader(http.StatusOK)
+	return templates.ExecuteTemplate(c.Response().Writer, "tools.html", h.getTemplateData(nil))
+}
+
+func (h *Handler) GetRecipeBooks(c echo.Context) error {
+	spaceID := c.QueryParam("space_id")
+	token := h.getToken(c)
+	if token == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+	}
+	correlationID := c.Request().Header.Get("X-Correlation-ID")
+
+	books, err := h.Tandoor.GetRecipeBooks(spaceID, token, correlationID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, books)
+}
+
+type DuplicateGroup struct {
+	Strategy string                   `json:"strategy"`
+	Key      string                   `json:"key"`
+	Recipes  []map[string]interface{} `json:"recipes"`
+}
+
+func (h *Handler) GetDuplicates(c echo.Context) error {
+	spaceID := c.QueryParam("space_id")
+	token := h.getToken(c)
+	if token == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+	}
+	correlationID := c.Request().Header.Get("X-Correlation-ID")
+
+	recipes, err := h.Tandoor.GetRecipes(spaceID, token, correlationID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	// 1. Find duplicates by Title (case-insensitive)
+	titleGroups := make(map[string][]map[string]interface{})
+	// 2. Find duplicates by source_url (excluding null / empty)
+	urlGroups := make(map[string][]map[string]interface{})
+
+	for _, recipe := range recipes {
+		name, _ := recipe["name"].(string)
+		nameKey := strings.ToLower(strings.TrimSpace(name))
+		if nameKey != "" {
+			titleGroups[nameKey] = append(titleGroups[nameKey], recipe)
+		}
+
+		if sourceURLVal, exists := recipe["source_url"]; exists && sourceURLVal != nil {
+			if sourceURL, ok := sourceURLVal.(string); ok && sourceURL != "" {
+				urlGroups[sourceURL] = append(urlGroups[sourceURL], recipe)
+			}
+		}
+	}
+
+	var duplicateGroups []DuplicateGroup
+
+	// Add title duplicate groups (groups with size > 1)
+	for key, group := range titleGroups {
+		if len(group) > 1 {
+			duplicateGroups = append(duplicateGroups, DuplicateGroup{
+				Strategy: "title",
+				Key:      key,
+				Recipes:  group,
+			})
+		}
+	}
+
+	// Add url duplicate groups (groups with size > 1)
+	for key, group := range urlGroups {
+		if len(group) > 1 {
+			duplicateGroups = append(duplicateGroups, DuplicateGroup{
+				Strategy: "source_url",
+				Key:      key,
+				Recipes:  group,
+			})
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{"groups": duplicateGroups})
+}
+
+type CleanDuplicatesRequest struct {
+	SpaceID string           `json:"space_id"`
+	Groups  []DuplicateGroup `json:"groups"`
+}
+
+func (h *Handler) CleanDuplicates(c echo.Context) error {
+	var req CleanDuplicatesRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	}
+
+	token := h.getToken(c)
+	if token == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+	}
+	correlationID := c.Request().Header.Get("X-Correlation-ID")
+
+	deletedCount := 0
+	for _, group := range req.Groups {
+		if len(group.Recipes) <= 1 {
+			continue
+		}
+
+		// Sort recipes by ID descending (newest ID first)
+		recipes := group.Recipes
+		for i := 0; i < len(recipes); i++ {
+			for j := i + 1; j < len(recipes); j++ {
+				idI := getRecipeID(recipes[i])
+				idJ := getRecipeID(recipes[j])
+				if idJ > idI {
+					recipes[i], recipes[j] = recipes[j], recipes[i]
+				}
+			}
+		}
+
+		// Keep the first one (newest), delete all the rest
+		for i := 1; i < len(recipes); i++ {
+			recipeID := getRecipeID(recipes[i])
+			if recipeID > 0 {
+				recipeIDStr := fmt.Sprintf("%d", recipeID)
+				services.LogJSON(correlationID, "Tools", fmt.Sprintf("Cleaning duplicate recipe ID %s (%s) from group key '%s'", recipeIDStr, recipes[i]["name"], group.Key), "INFO")
+				err := h.Tandoor.DeleteRecipe(recipeIDStr, token, correlationID)
+				if err != nil {
+					services.LogJSON(correlationID, "Tools", fmt.Sprintf("Failed to delete recipe duplicate %s: %v", recipeIDStr, err), "ERROR")
+				} else {
+					deletedCount++
+				}
+			}
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message":       "Cleanup completed",
+		"deleted_count": deletedCount,
+	})
+}
+
+func getRecipeID(recipe map[string]interface{}) int {
+	if idVal, exists := recipe["id"]; exists {
+		if idFloat, ok := idVal.(float64); ok {
+			return int(idFloat)
+		} else if idInt, ok := idVal.(int); ok {
+			return idInt
+		}
+	}
+	return 0
+}
+
+type SuggestBookRecipesRequest struct {
+	SpaceID string `json:"space_id"`
+	BookID  int    `json:"book_id"`
+}
+
+func (h *Handler) SuggestBookRecipes(c echo.Context) error {
+	var req SuggestBookRecipesRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	}
+
+	token := h.getToken(c)
+	if token == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+	}
+	correlationID := c.Request().Header.Get("X-Correlation-ID")
+
+	// 1. Get book details
+	book, err := h.Tandoor.GetRecipeBook(req.BookID, req.SpaceID, token, correlationID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to get book: %v", err)})
+	}
+	bookName, _ := book["name"].(string)
+	bookDesc, _ := book["description"].(string)
+
+	// 2. Get book entries
+	bookEntries, err := h.Tandoor.GetRecipeBookEntries(req.BookID, req.SpaceID, token, correlationID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to get book entries: %v", err)})
+	}
+
+	inBookMap := make(map[int]bool)
+	for _, entry := range bookEntries {
+		if recipeIDVal, exists := entry["recipe"]; exists {
+			var recipeID int
+			if rf, ok := recipeIDVal.(float64); ok {
+				recipeID = int(rf)
+			} else if ri, ok := recipeIDVal.(int); ok {
+				recipeID = ri
+			}
+			if recipeID > 0 {
+				inBookMap[recipeID] = true
+			}
+		}
+	}
+
+	// 3. Get all recipes in space
+	allRecipes, err := h.Tandoor.GetRecipes(req.SpaceID, token, correlationID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to get recipes: %v", err)})
+	}
+
+	var candidates []map[string]interface{}
+	for _, r := range allRecipes {
+		id := getRecipeID(r)
+		if id > 0 && !inBookMap[id] {
+			candidates = append(candidates, r)
+		}
+	}
+
+	if len(candidates) == 0 {
+		return c.JSON(http.StatusOK, map[string]interface{}{"suggested_recipes": []interface{}{}})
+	}
+
+	// 4. Get 10 newest examples currently in the book
+	var existingExamples []map[string]interface{}
+	// Sort bookEntries by id descending to get the newest
+	for i := 0; i < len(bookEntries); i++ {
+		for j := i + 1; j < len(bookEntries); j++ {
+			idI := getRecipeID(bookEntries[i])
+			idJ := getRecipeID(bookEntries[j])
+			if idJ > idI {
+				bookEntries[i], bookEntries[j] = bookEntries[j], bookEntries[i]
+			}
+		}
+	}
+	for i := 0; i < len(bookEntries) && len(existingExamples) < 10; i++ {
+		entry := bookEntries[i]
+		if recipeContent, ok := entry["recipe_content"].(map[string]interface{}); ok {
+			existingExamples = append(existingExamples, recipeContent)
+		}
+	}
+
+	// 5. Ask Gemini to classify
+	// Chunk candidate list if it exceeds 100 to keep it fast
+	if len(candidates) > 100 {
+		candidates = candidates[:100]
+	}
+
+	ctx := context.Background()
+	matchedIDs, err := h.Gemini.ClassifyRecipesForBook(ctx, bookName, bookDesc, existingExamples, candidates, correlationID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Gemini classification failed: %v", err)})
+	}
+
+	matchedMap := make(map[int]bool)
+	for _, id := range matchedIDs {
+		matchedMap[id] = true
+	}
+
+	var suggestedRecipes []map[string]interface{}
+	for _, r := range candidates {
+		id := getRecipeID(r)
+		if id > 0 && matchedMap[id] {
+			suggestedRecipes = append(suggestedRecipes, r)
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"suggested_recipes": suggestedRecipes,
+	})
+}
+
+type AddRecipesToBookRequest struct {
+	SpaceID   string `json:"space_id"`
+	BookID    int    `json:"book_id"`
+	RecipeIDs []int  `json:"recipe_ids"`
+}
+
+func (h *Handler) AddRecipesToBook(c echo.Context) error {
+	var req AddRecipesToBookRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	}
+
+	token := h.getToken(c)
+	if token == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+	}
+	correlationID := c.Request().Header.Get("X-Correlation-ID")
+
+	addedCount := 0
+	for _, recipeID := range req.RecipeIDs {
+		services.LogJSON(correlationID, "Tools", fmt.Sprintf("Adding recipe ID %d to book %d", recipeID, req.BookID), "INFO")
+		_, err := h.Tandoor.AddRecipeToBook(req.BookID, recipeID, req.SpaceID, token, correlationID)
+		if err != nil {
+			services.LogJSON(correlationID, "Tools", fmt.Sprintf("Failed to add recipe %d to book %d: %v", recipeID, req.BookID, err), "ERROR")
+		} else {
+			addedCount++
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message":     "Recipes added successfully",
+		"added_count": addedCount,
+	})
 }

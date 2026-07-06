@@ -515,3 +515,112 @@ func extractJSON(s string) string {
 
 	return s[start : end+1]
 }
+
+func (s *GeminiService) ClassifyRecipesForBook(ctx context.Context, bookName string, bookDesc string, existingRecipes []map[string]interface{}, candidates []map[string]interface{}, correlationID string) ([]int, error) {
+	LogJSON(correlationID, "Gemini", fmt.Sprintf("Classifying %d recipes for book '%s' using AI", len(candidates), bookName), "INFO")
+	
+	if len(candidates) == 0 {
+		return []int{}, nil
+	}
+
+	model := s.Client.GenerativeModel("gemini-3.1-pro-preview")
+	model.ResponseMIMEType = "application/json"
+
+	// Format existing recipes as examples
+	var examplesBuilder strings.Builder
+	for _, r := range existingRecipes {
+		name, _ := r["name"].(string)
+		desc, _ := r["description"].(string)
+		keywordsList := []string{}
+		if kws, ok := r["keywords"].([]interface{}); ok {
+			for _, kw := range kws {
+				if kwMap, ok := kw.(map[string]interface{}); ok {
+					if label, ok := kwMap["label"].(string); ok {
+						keywordsList = append(keywordsList, label)
+					}
+				}
+			}
+		}
+		examplesBuilder.WriteString(fmt.Sprintf("- Name: %s, Description: %s, Tags: %v\n", name, desc, keywordsList))
+	}
+
+	// Format candidates
+	var candidatesBuilder strings.Builder
+	for _, r := range candidates {
+		var id int
+		if idVal, exists := r["id"]; exists {
+			if idFloat, ok := idVal.(float64); ok {
+				id = int(idFloat)
+			} else if idInt, ok := idVal.(int); ok {
+				id = idInt
+			}
+		}
+		name, _ := r["name"].(string)
+		desc, _ := r["description"].(string)
+		keywordsList := []string{}
+		if kws, ok := r["keywords"].([]interface{}); ok {
+			for _, kw := range kws {
+				if kwMap, ok := kw.(map[string]interface{}); ok {
+					if label, ok := kwMap["label"].(string); ok {
+						keywordsList = append(keywordsList, label)
+					}
+				}
+			}
+		}
+		candidatesBuilder.WriteString(fmt.Sprintf("- ID: %d, Name: %s, Description: %s, Tags: %v\n", id, name, desc, keywordsList))
+	}
+
+	prompt := fmt.Sprintf(`
+You are a culinary AI assistant. Your task is to classify whether a list of candidate recipes fits into a specific recipe book.
+
+Recipe Book Name: "%s"
+Recipe Book Description: "%s"
+
+Here are some examples of recipes already in this book:
+%s
+
+Here is the list of candidate recipes to classify:
+%s
+
+Analyze each candidate recipe based on its name, description, and tags. Determine if it is a good fit for this recipe book. For example:
+- If the book is about pasta, only include pasta dishes.
+- If the book is "Sandwiches" or "Kanapki", include toast, sandwiches, burgers, etc.
+- If the book is about soups, include only soup recipes.
+Be reasonable but accurate.
+
+Return the result as a strictly formatted JSON object matching the structure below:
+{
+  "matched_recipe_ids": [12, 45, 89]
+}
+`, bookName, bookDesc, examplesBuilder.String(), candidatesBuilder.String())
+
+	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+	if err != nil {
+		LogJSON(correlationID, "Gemini", fmt.Sprintf("Error classifying recipes for book: %v", err), "ERROR")
+		return nil, err
+	}
+
+	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil {
+		return nil, fmt.Errorf("no response from gemini")
+	}
+
+	var fullResponse strings.Builder
+	for _, part := range resp.Candidates[0].Content.Parts {
+		fullResponse.WriteString(fmt.Sprintf("%v", part))
+	}
+
+	rawStr := fullResponse.String()
+	jsonStr := extractJSON(rawStr)
+
+	var result struct {
+		MatchedRecipeIDs []int `json:"matched_recipe_ids"`
+	}
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+		LogJSON(correlationID, "Gemini", fmt.Sprintf("Failed to unmarshal Gemini classification: %s. Raw: %s", err, rawStr), "ERROR")
+		return nil, err
+	}
+
+	LogJSON(correlationID, "Gemini", fmt.Sprintf("AI classification complete. Found %d matching recipes", len(result.MatchedRecipeIDs)), "INFO")
+	return result.MatchedRecipeIDs, nil
+}
+

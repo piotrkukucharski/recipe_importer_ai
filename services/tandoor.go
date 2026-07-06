@@ -552,3 +552,150 @@ func (s *TandoorService) recipeExists(sourceURL, spaceID, token, correlationID s
 
 	return false, nil
 }
+
+type PaginatedResponseWithNext struct {
+	Results []map[string]interface{} `json:"results"`
+	Next    string                   `json:"next"`
+}
+
+func (s *TandoorService) getRawWithPagination(path string, spaceID string, token string, correlationID string) ([]map[string]interface{}, string, error) {
+	var lastErr error
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			time.Sleep(retryInterval * time.Duration(i))
+		}
+
+		if spaceID != "" {
+			if err := s.switchSpace(spaceID, token, correlationID); err != nil {
+				lastErr = err
+				continue
+			}
+		}
+
+		req, _ := http.NewRequest("GET", s.BaseURL+path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode >= 500 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("server error %d: %s", resp.StatusCode, string(bodyBytes))
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			return nil, "", fmt.Errorf("tandoor error %d: %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		var data PaginatedResponseWithNext
+		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			return nil, "", err
+		}
+		return data.Results, data.Next, nil
+	}
+	return nil, "", lastErr
+}
+
+func (s *TandoorService) getSingleWithRetry(path string, spaceID string, token string, correlationID string) (map[string]interface{}, error) {
+	var lastErr error
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			time.Sleep(retryInterval * time.Duration(i))
+		}
+
+		if spaceID != "" {
+			if err := s.switchSpace(spaceID, token, correlationID); err != nil {
+				lastErr = err
+				continue
+			}
+		}
+
+		req, _ := http.NewRequest("GET", s.BaseURL+path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode >= 500 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("server error %d: %s", resp.StatusCode, string(bodyBytes))
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("tandoor error %d: %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		var data map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			return nil, err
+		}
+		return data, nil
+	}
+	return nil, lastErr
+}
+
+func (s *TandoorService) GetRecipes(spaceID string, token string, correlationID string) ([]map[string]interface{}, error) {
+	var allRecipes []map[string]interface{}
+	path := "/api/recipe/?page_size=200"
+
+	for path != "" {
+		results, nextURL, err := s.getRawWithPagination(path, spaceID, token, correlationID)
+		if err != nil {
+			return nil, err
+		}
+		allRecipes = append(allRecipes, results...)
+		
+		if nextURL != "" {
+			u, err := url.Parse(nextURL)
+			if err != nil {
+				break
+			}
+			// Use RequestURI to get path + query
+			path = u.RequestURI()
+		} else {
+			path = ""
+		}
+	}
+
+	return allRecipes, nil
+}
+
+func (s *TandoorService) GetRecipeBooks(spaceID string, token string, correlationID string) ([]map[string]interface{}, error) {
+	path := "/api/recipe-book/?page_size=200"
+	results, _, err := s.getRawWithPagination(path, spaceID, token, correlationID)
+	return results, err
+}
+
+func (s *TandoorService) GetRecipeBook(bookID int, spaceID string, token string, correlationID string) (map[string]interface{}, error) {
+	path := fmt.Sprintf("/api/recipe-book/%d/", bookID)
+	return s.getSingleWithRetry(path, spaceID, token, correlationID)
+}
+
+func (s *TandoorService) GetRecipeBookEntries(bookID int, spaceID string, token string, correlationID string) ([]map[string]interface{}, error) {
+	path := fmt.Sprintf("/api/recipe-book-entry/?book=%d&page_size=500", bookID)
+	results, _, err := s.getRawWithPagination(path, spaceID, token, correlationID)
+	return results, err
+}
+
+func (s *TandoorService) AddRecipeToBook(bookID int, recipeID int, spaceID string, token string, correlationID string) (map[string]interface{}, error) {
+	body := map[string]interface{}{
+		"book":   bookID,
+		"recipe": recipeID,
+	}
+	return s.postWithRetry("/api/recipe-book-entry/", body, spaceID, token, correlationID)
+}
+

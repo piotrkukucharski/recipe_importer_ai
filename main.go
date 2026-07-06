@@ -115,6 +115,7 @@ func runServer(h *api.Handler) {
     // Web UI
     e.GET("/", h.ShowIndex)
     e.GET("/imports", h.ShowImports)
+    e.GET("/tools", h.ShowTools)
     e.GET("/api/spaces", h.GetSpaces)
     e.POST("/api/login", h.Login)
     e.POST("/api/logout", h.Logout)
@@ -128,6 +129,13 @@ func runServer(h *api.Handler) {
 	e.POST("/import-custom", h.ImportRecipeCustom)
     e.GET("/import/:CorrelationID", h.ShowImportProgress)
     e.DELETE("/api/recipe/:id", h.DeleteRecipe)
+
+    // Tools API
+    e.GET("/api/tools/books", h.GetRecipeBooks)
+    e.GET("/api/tools/duplicates", h.GetDuplicates)
+    e.POST("/api/tools/clean-duplicates", h.CleanDuplicates)
+    e.POST("/api/tools/suggest-book-recipes", h.SuggestBookRecipes)
+    e.POST("/api/tools/add-recipes-to-book", h.AddRecipesToBook)
 
 	// MCP Server (SSE Mode)
 	mcpServer := api.NewMCPServer(h)

@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tandoor Tools - Recipe Importer AI</title>
+    <style>
+        body { font-family: sans-serif; max-width: 850px; margin: 0 auto; padding: 20px; line-height: 1.6; background: #f4f7f6; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { margin-top: 0; color: #333; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
+        select, input[type="text"], input[type="password"], textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 14px; font-family: inherit; }
+        button { background: #28a745; color: white; border: none; padding: 12px 20px; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%; transition: background 0.3s; font-weight: bold; }
+        button:hover { background: #218838; }
+        button:disabled { background: #85cfa1; cursor: not-allowed; }
+        button.secondary { background: #007bff; }
+        button.secondary:hover { background: #0069d9; }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+        
+        /* Tabs navigation */
+        .tabs { display: flex; gap: 10px; margin-bottom: 25px; border-bottom: 2px solid #eaeaea; padding-bottom: 10px; }
+        .tab-btn { background: none; color: #555; border: none; padding: 10px 20px; width: auto; font-size: 15px; cursor: pointer; border-radius: 4px; transition: 0.3s; }
+        .tab-btn:hover { background: #eaeaea; color: #000; }
+        .tab-btn.active { background: #007bff; color: white; }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Duplicate groups styles */
+        .duplicate-group-card { background: #fdfdfd; border: 1px solid #dee2e6; border-radius: 6px; padding: 15px; margin-bottom: 20px; }
+        .duplicate-group-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
+        .strategy-badge { font-size: 11px; background: #6c757d; color: white; padding: 3px 8px; border-radius: 12px; font-weight: bold; }
+        .recipe-list { display: flex; flex-direction: column; gap: 10px; }
+        .recipe-item { display: flex; align-items: center; gap: 15px; background: #fff; padding: 10px; border-radius: 4px; border: 1px solid #f1f3f5; }
+        .recipe-img { width: 60px; height: 60px; border-radius: 4px; object-fit: cover; background: #eee; flex-shrink: 0; }
+        .recipe-info { flex-grow: 1; }
+        .recipe-name { font-weight: bold; font-size: 14px; margin: 0 0 4px 0; color: #212529; }
+        .recipe-desc { font-size: 12px; color: #6c757d; margin: 0 0 4px 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .recipe-url { font-size: 11px; color: #007bff; text-decoration: none; word-break: break-all; }
+        .recipe-date { font-size: 11px; color: #ffc107; font-weight: bold; margin-left: 10px; }
+
+        #login-form { display: block; }
+        #main-app { display: none; }
+        nav { display: none; justify-content: flex-end; margin-bottom: 20px; gap: 10px; }
+        .nav-btn { background: #007bff; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-size: 14px; text-decoration: none; font-weight: bold; transition: background 0.3s; }
+        .nav-btn:hover { background: #0069d9; }
+        .logout-btn { background: #dc3545; }
+        .logout-btn:hover { background: #c82333; }
+
+        #status { margin-top: 20px; padding: 15px; border-radius: 4px; display: none; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info-msg { background: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }
+        
+        .loading-spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 20px auto; display: none; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <nav id="navbar">
+        <a href="/" class="nav-btn">Home</a>
+        <a href="/imports" class="nav-btn">Import History</a>
+        <button id="logoutBtnTop" class="logout-btn nav-btn">Logout</button>
+    </nav>
+
+    <div class="container">
+        <h1>Tandoor Tools</h1>
+
+        <div id="login-form">
+            <h3>Login with Tandoor Credentials</h3>
+            <div class="form-group">
+                <label for="username">Email/Username:</label>
+                <input type="text" id="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" required>
+            </div>
+            <button id="loginBtn">Login</button>
+        </div>
+
+        <div id="main-app">
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchTab('duplicates-tab')">Znajdź duplikaty</button>
+                <button class="tab-btn" onclick="switchTab('book-tab')">Dodaj do książki (AI)</button>
+            </div>
+
+            <!-- Global Space Selection -->
+            <div class="form-group">
+                <label for="space">Select Tandoor Space:</label>
+                <select id="space">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+
+            <!-- STATUS and SPINNER -->
+            <div id="status"></div>
+            <div id="spinner" class="loading-spinner"></div>
+
+            <!-- DUP TAB CONTENT -->
+            <div id="duplicates-tab" class="tab-content active">
+                <div class="form-group">
+                    <button id="findDupsBtn" class="secondary">Szukaj duplikatów</button>
+                </div>
+                <div id="dupsResults" style="margin-top: 20px;">
+                    <!-- Results dynamically loaded -->
+                </div>
+                <button id="cleanDupsBtn" class="danger" style="display: none; margin-top: 20px;">Wyczyść zaznaczone grupy (orginał zostaw najnowszy)</button>
+            </div>
+
+            <!-- BOOK TAB CONTENT -->
+            <div id="book-tab" class="tab-content">
+                <div class="form-group">
+                    <label for="bookSelect">Wybierz książkę:</label>
+                    <select id="bookSelect">
+                        <option value="">Wybierz najpierw przestrzeń...</option>
+                    </select>
+                </div>
+                <button id="analyzeBookBtn" class="secondary" disabled>Analizuj i dopasuj przepisy za pomocą AI</button>
+
+                <div id="bookResults" style="margin-top: 20px;">
+                    <!-- AI Suggestions loaded here -->
+                </div>
+                <button id="addRecipesBtn" style="display: none; margin-top: 20px;">Dodaj wybrane przepisy do książki</button>
+            </div>
+        </div>
+        {{template "footer" .}}
+    </div>
+
+    <script>
+        const loginForm = document.getElementById('login-form');
+        const mainApp = document.getElementById('main-app');
+        const navbar = document.getElementById('navbar');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const loginBtn = document.getElementById('loginBtn');
+        const logoutBtn = document.getElementById('logoutBtnTop');
+
+        const spaceSelect = document.getElementById('space');
+        const bookSelect = document.getElementById('bookSelect');
+        const findDupsBtn = document.getElementById('findDupsBtn');
+        const cleanDupsBtn = document.getElementById('cleanDupsBtn');
+        const analyzeBookBtn = document.getElementById('analyzeBookBtn');
+        const addRecipesBtn = document.getElementById('addRecipesBtn');
+        
+        const dupsResultsDiv = document.getElementById('dupsResults');
+        const bookResultsDiv = document.getElementById('bookResults');
+        const statusDiv = document.getElementById('status');
+        const spinner = document.getElementById('spinner');
+
+        let duplicateGroupsData = [];
+
+        function showApp() {
+            loginForm.style.display = 'none';
+            mainApp.style.display = 'block';
+            navbar.style.display = 'flex';
+            loadSpaces();
+        }
+
+        function showLogin() {
+            loginForm.style.display = 'block';
+            mainApp.style.display = 'none';
+            navbar.style.display = 'none';
+            statusDiv.style.display = 'none';
+        }
+
+        function setStatus(msg, type = 'info-msg') {
+            statusDiv.style.display = 'block';
+            statusDiv.className = type;
+            statusDiv.textContent = msg;
+        }
+
+        function hideStatus() {
+            statusDiv.style.display = 'none';
+        }
+
+        function showLoading(show) {
+            spinner.style.display = show ? 'block' : 'none';
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => btn.textContent.toLowerCase().includes(tabId.split('-')[0] === 'duplicates' ? 'duplikaty' : 'książki'));
+            if (activeBtn) activeBtn.classList.add('active');
+            
+            document.getElementById(tabId).classList.add('active');
+            hideStatus();
+        }
+
+        function loadSpaces() {
+            fetch('/api/spaces')
+                .then(res => {
+                    if (res.status === 401) {
+                        showLogin();
+                        return [];
+                    }
+                    return res.json();
+                })
+                .then(data => {
+                    if (data && data.length > 0) {
+                        spaceSelect.innerHTML = '';
+                        data.forEach(s => {
+                            const opt = document.createElement('option');
+                            opt.value = s.id;
+                            opt.textContent = s.name;
+                            spaceSelect.appendChild(opt);
+                        });
+                        loadBooks();
+                    }
+                })
+                .catch(err => console.error('Failed to load spaces:', err));
+        }
+
+        function loadBooks() {
+            const spaceID = spaceSelect.value;
+            if (!spaceID) return;
+
+            analyzeBookBtn.disabled = true;
+            bookSelect.innerHTML = '<option value="">Loading books...</option>';
+
+            fetch('/api/tools/books?space_id=' + spaceID)
+                .then(res => res.json())
+                .then(data => {
+                    bookSelect.innerHTML = '<option value="">-- Wybierz książkę --</option>';
+                    if (data && data.length > 0) {
+                        data.forEach(b => {
+                            const opt = document.createElement('option');
+                            opt.value = b.id;
+                            opt.textContent = b.name;
+                            bookSelect.appendChild(opt);
+                        });
+                        analyzeBookBtn.disabled = false;
+                    } else {
+                        bookSelect.innerHTML = '<option value="">Brak książek w tej przestrzeni</option>';
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    bookSelect.innerHTML = '<option value="">Błąd ładowania książek</option>';
+                });
+        }
+
+        spaceSelect.addEventListener('change', () => {
+            loadBooks();
+            dupsResultsDiv.innerHTML = '';
+            bookResultsDiv.innerHTML = '';
+            cleanDupsBtn.style.display = 'none';
+            addRecipesBtn.style.display = 'none';
+            hideStatus();
+        });
+
+        // 1. DUPLICATES LOGIC
+        findDupsBtn.addEventListener('click', () => {
+            const spaceID = spaceSelect.value;
+            if (!spaceID) return alert('Wybierz przestrzeń!');
+
+            showLoading(true);
+            hideStatus();
+            dupsResultsDiv.innerHTML = '';
+            cleanDupsBtn.style.display = 'none';
+            findDupsBtn.disabled = true;
+
+            fetch('/api/tools/duplicates?space_id=' + spaceID)
+                .then(res => res.json())
+                .then(data => {
+                    duplicateGroupsData = data.groups || [];
+                    if (duplicateGroupsData.length === 0) {
+                        setStatus('Brak duplikatów w wybranej przestrzeni!', 'success');
+                        return;
+                    }
+
+                    setStatus(`Znaleziono ${duplicateGroupsData.length} grup duplikatów.`, 'info-msg');
+                    renderDuplicates();
+                    cleanDupsBtn.style.display = 'block';
+                })
+                .catch(err => {
+                    console.error(err);
+                    setStatus('Wystąpił błąd podczas szukania duplikatów.', 'error');
+                })
+                .finally(() => {
+                    showLoading(false);
+                    findDupsBtn.disabled = false;
+                });
+        });
+
+        function renderDuplicates() {
+            dupsResultsDiv.innerHTML = '';
+            duplicateGroupsData.forEach((group, index) => {
+                const card = document.createElement('div');
+                card.className = 'duplicate-group-card';
+
+                const header = document.createElement('div');
+                header.className = 'duplicate-group-header';
+                header.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" class="group-checkbox" data-index="${index}" style="transform: scale(1.2);">
+                        <strong style="font-size: 15px; color: #333;">Klucz: ${group.key}</strong>
+                    </div>
+                    <span class="strategy-badge">${group.strategy === 'title' ? 'Tytuł' : 'Source URL'}</span>
+                `;
+                card.appendChild(header);
+
+                const list = document.createElement('div');
+                list.className = 'recipe-list';
+                
+                // Sort recipes newest first to visually match backend behavior
+                const sortedRecipes = [...group.recipes].sort((a, b) => b.id - a.id);
+
+                sortedRecipes.forEach((recipe, rIdx) => {
+                    const isNewest = rIdx === 0;
+                    const item = document.createElement('div');
+                    item.className = 'recipe-item';
+                    item.innerHTML = `
+                        <img class="recipe-img" src="${recipe.image || 'https://via.placeholder.com/60?text=No+Photo'}" alt="Recipe photo">
+                        <div class="recipe-info">
+                            <h4 class="recipe-name">${recipe.name} ${isNewest ? '<span class="recipe-date">(NAJNOWSZY - ZOSTAJE)</span>' : '<span class="recipe-date" style="color: #dc3545;">(DO USUNIĘCIA)</span>'}</h4>
+                            <p class="recipe-desc">${recipe.description || 'Brak opisu'}</p>
+                            ${recipe.source_url ? `<a class="recipe-url" href="${recipe.source_url}" target="_blank">${recipe.source_url}</a>` : '<span style="font-size:11px; color:#aaa;">Brak URL</span>'}
+                        </div>
+                        <span style="font-size: 11px; color: #6c757d; font-family: monospace;">ID: ${recipe.id}</span>
+                    `;
+                    list.appendChild(item);
+                });
+
+                card.appendChild(list);
+                dupsResultsDiv.appendChild(card);
+            });
+        }
+
+        cleanDupsBtn.addEventListener('click', () => {
+            const selectedIndices = Array.from(document.querySelectorAll('.group-checkbox:checked'))
+                .map(cb => parseInt(cb.getAttribute('data-index')));
+
+            if (selectedIndices.length === 0) {
+                return alert('Zaznacz przynajmniej jedną grupę duplikatów do wyczyszczenia!');
+            }
+
+            if (!confirm(`Czy na pewno chcesz usunąć duplikaty w ${selectedIndices.length} zaznaczonych grupach? Ta operacja jest nieodwracalna.`)) {
+                return;
+            }
+
+            const spaceID = spaceSelect.value;
+            const groupsToClean = selectedIndices.map(idx => duplicateGroupsData[idx]);
+
+            showLoading(true);
+            hideStatus();
+            cleanDupsBtn.disabled = true;
+
+            fetch('/api/tools/clean-duplicates', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    space_id: spaceID,
+                    groups: groupsToClean
+                })
+            })
+            .then(res => {
+                if (res.ok) {
+                    setStatus('Wyczyszczono zaznaczone duplikaty pomyślnie!', 'success');
+                    dupsResultsDiv.innerHTML = '';
+                    cleanDupsBtn.style.display = 'none';
+                } else {
+                    throw new Error('Server error');
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                setStatus('Błąd podczas czyszczenia duplikatów.', 'error');
+            })
+            .finally(() => {
+                showLoading(false);
+                cleanDupsBtn.disabled = false;
+            });
+        });
+
+        // 2. BOOK AI SUGGESTIONS LOGIC
+        analyzeBookBtn.addEventListener('click', () => {
+            const spaceID = spaceSelect.value;
+            const bookID = bookSelect.value;
+            if (!spaceID || !bookID) return alert('Wybierz przestrzeń i książkę kucharską!');
+
+            showLoading(true);
+            hideStatus();
+            bookResultsDiv.innerHTML = '';
+            addRecipesBtn.style.display = 'none';
+            analyzeBookBtn.disabled = true;
+
+            fetch('/api/tools/suggest-book-recipes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    space_id: spaceID,
+                    book_id: parseInt(bookID)
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                const matched = data.suggested_recipes || [];
+                if (matched.length === 0) {
+                    setStatus('AI nie znalazło żadnych nowych przepisów pasujących do tej książki.', 'info-msg');
+                    return;
+                }
+
+                setStatus(`AI dopasowało ${matched.length} przepisów pasujących do wybranej książki.`, 'success');
+                
+                bookResultsDiv.innerHTML = '<h3>Sugerowane przepisy do dodania:</h3>';
+                const list = document.createElement('div');
+                list.className = 'recipe-list';
+                
+                matched.forEach(recipe => {
+                    const item = document.createElement('div');
+                    item.className = 'recipe-item';
+                    item.innerHTML = `
+                        <input type="checkbox" class="recipe-book-checkbox" data-id="${recipe.id}" checked style="margin-right:10px; transform: scale(1.2);">
+                        <img class="recipe-img" src="${recipe.image || 'https://via.placeholder.com/60?text=No+Photo'}" alt="Recipe photo">
+                        <div class="recipe-info">
+                            <h4 class="recipe-name">${recipe.name}</h4>
+                            <p class="recipe-desc">${recipe.description || 'Brak opisu'}</p>
+                            ${recipe.source_url ? `<a class="recipe-url" href="${recipe.source_url}" target="_blank">${recipe.source_url}</a>` : ''}
+                        </div>
+                        <span style="font-size: 11px; color: #6c757d; font-family: monospace;">ID: ${recipe.id}</span>
+                    `;
+                    list.appendChild(item);
+                });
+                
+                bookResultsDiv.appendChild(list);
+                addRecipesBtn.style.display = 'block';
+            })
+            .catch(err => {
+                console.error(err);
+                setStatus('Błąd podczas generowania rekomendacji AI.', 'error');
+            })
+            .finally(() => {
+                showLoading(false);
+                analyzeBookBtn.disabled = false;
+            });
+        });
+
+        addRecipesBtn.addEventListener('click', () => {
+            const selectedIDs = Array.from(document.querySelectorAll('.recipe-book-checkbox:checked'))
+                .map(cb => parseInt(cb.getAttribute('data-id')));
+
+            if (selectedIDs.length === 0) {
+                return alert('Zaznacz przepisy, które chcesz dodać do książki!');
+            }
+
+            const spaceID = spaceSelect.value;
+            const bookID = bookSelect.value;
+
+            showLoading(true);
+            hideStatus();
+            addRecipesBtn.disabled = true;
+
+            fetch('/api/tools/add-recipes-to-book', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    space_id: spaceID,
+                    book_id: parseInt(bookID),
+                    recipe_ids: selectedIDs
+                })
+            })
+            .then(res => {
+                if (res.ok) {
+                    setStatus(`Pomyślnie dodano ${selectedIDs.length} przepisów do książki!`, 'success');
+                    bookResultsDiv.innerHTML = '';
+                    addRecipesBtn.style.display = 'none';
+                } else {
+                    throw new Error('Server error');
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                setStatus('Wystąpił błąd podczas dodawania przepisów do książki.', 'error');
+            })
+            .finally(() => {
+                showLoading(false);
+                addRecipesBtn.disabled = false;
+            });
+        });
+
+        loginBtn.addEventListener('click', () => {
+            const username = usernameInput.value;
+            const password = passwordInput.value;
+            
+            fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            })
+            .then(res => {
+                if (res.ok) {
+                    showApp();
+                } else {
+                    alert('Login failed. Please check your credentials.');
+                }
+            });
+        });
+
+        logoutBtn.addEventListener('click', () => {
+            fetch('/api/logout', { method: 'POST' }).then(() => showLogin());
+        });
+
+        // Initial Auth check
+        fetch('/api/spaces').then(res => {
+            if (res.ok) {
+                showApp();
+            } else {
+                showLogin();
+            }
+        }).catch(() => showLogin());
+    </script>
+</body>
+</html>
