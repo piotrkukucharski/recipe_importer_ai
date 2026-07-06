@@ -6,19 +6,29 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"recipe_importer_ai/api"
-	"recipe_importer_ai/services"
+	"recipe_importer_ai/infrastructure/api"
+	"recipe_importer_ai/infrastructure/apify"
+	"recipe_importer_ai/infrastructure/gemini"
+	"recipe_importer_ai/infrastructure/logger"
+	"recipe_importer_ai/infrastructure/mcp"
+	"recipe_importer_ai/infrastructure/tandoor"
+	"recipe_importer_ai/usecases/auth"
+	"recipe_importer_ai/usecases/book"
+	"recipe_importer_ai/usecases/cookbook"
+	"recipe_importer_ai/usecases/duplicates"
+	"recipe_importer_ai/usecases/ingredient"
+	"recipe_importer_ai/usecases/import_recipe"
+	"recipe_importer_ai/usecases/recipe"
+	"recipe_importer_ai/usecases/tag"
+	"net/http"
 	"strings"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	mcp_sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/joho/godotenv"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 )
 
 func main() {
-	// Parse CLI flags
 	batchFile := flag.String("file", "", "Path to txt file with URLs for batch import")
 	spaceID := flag.String("space", "", "Tandoor Space ID for CLI import")
 	lang := flag.String("lang", "Polish", "Target language for recipes (e.g., Polish, English, German)")
@@ -26,31 +36,73 @@ func main() {
 	mcpFlag := flag.Bool("mcp", false, "Start MCP server in Stdio mode")
 	flag.Parse()
 
-	// Load .env file if it exists, otherwise fall back to system environment variables
 	if _, err := os.Stat(".env"); err == nil {
 		if err := godotenv.Load(); err != nil {
-			services.LogJSON("system", "Main", "Error loading .env file", "WARN")
+			logger.LogJSON("system", "Main", "Error loading .env file", "WARN")
 		}
 	}
 
 	ctx := context.Background()
 
-	// Initialize services
-	apify := services.NewApifyService()
-	gemini, err := services.NewGeminiService(ctx)
+	// 1. Initialize Infrastructure Clients
+	apifyClient := apify.NewApifyService()
+	geminiClient, err := gemini.NewGeminiService(ctx)
 	if err != nil {
-		services.LogJSON("system", "Main", "Failed to initialize Gemini", "ERROR")
+		logger.LogJSON("system", "Main", "Failed to initialize Gemini", "ERROR")
 		os.Exit(1)
 	}
-	tandoor := services.NewTandoorService()
+	tandoorClient := tandoor.NewTandoorService()
 
+	// 2. Initialize UseCases
+	authUC := auth.NewAuthUseCase(tandoorClient)
+	findDuplicatesUC := duplicates.NewFindUseCase(tandoorClient)
+	cleanDuplicatesUC := duplicates.NewCleanUseCase(tandoorClient)
 
-	// Initialize handler/processor
-	h := &api.Handler{
-		Apify:         apify,
-		Gemini:        gemini,
-		Tandoor:       tandoor,
-	}
+	tagsUC := cookbook.NewTagsUseCase(tandoorClient, geminiClient)
+	matchUC := cookbook.NewMatchUseCase(geminiClient)
+	suggestUC := cookbook.NewSuggestUseCase(tandoorClient, tagsUC, matchUC)
+	addRecipesUC := cookbook.NewAddUseCase(tandoorClient)
+
+	processor := import_recipe.NewProcessor(geminiClient)
+	taskManager := import_recipe.NewTaskManager()
+	importURLUC := import_recipe.NewImportURLUseCase(apifyClient, processor, tandoorClient, taskManager)
+	importTextUC := import_recipe.NewImportTextUseCase(processor, tandoorClient, taskManager)
+	importImageUC := import_recipe.NewImportImageUseCase(processor, tandoorClient, taskManager)
+
+	recipeCreateUC := recipe.NewCreateUseCase(tandoorClient)
+	recipeGetUC := recipe.NewGetUseCase(tandoorClient)
+	recipeUpdateUC := recipe.NewUpdateUseCase(tandoorClient)
+	recipeDeleteUC := recipe.NewDeleteUseCase(tandoorClient)
+
+	tagCreateUC := tag.NewCreateUseCase(tandoorClient)
+	tagGetUC := tag.NewGetUseCase(tandoorClient)
+	tagUpdateUC := tag.NewUpdateUseCase(tandoorClient)
+	tagDeleteUC := tag.NewDeleteUseCase(tandoorClient)
+
+	bookCreateUC := book.NewCreateUseCase(tandoorClient)
+	bookGetUC := book.NewGetUseCase(tandoorClient)
+	bookUpdateUC := book.NewUpdateUseCase(tandoorClient)
+	bookDeleteUC := book.NewDeleteUseCase(tandoorClient)
+
+	ingCreateUC := ingredient.NewCreateUseCase(tandoorClient)
+	ingGetUC := ingredient.NewGetUseCase(tandoorClient)
+	ingUpdateUC := ingredient.NewUpdateUseCase(tandoorClient)
+	ingDeleteUC := ingredient.NewDeleteUseCase(tandoorClient)
+
+	// 3. Initialize HTTP handlers
+	h := api.NewApiHandler(
+		tandoorClient,
+		authUC,
+		findDuplicatesUC,
+		cleanDuplicatesUC,
+		suggestUC,
+		addRecipesUC,
+		importURLUC,
+		importTextUC,
+		importImageUC,
+		taskManager,
+		recipeDeleteUC,
+	)
 
 	// CLI Batch Mode
 	if *batchFile != "" {
@@ -58,32 +110,57 @@ func main() {
 			fmt.Println("Error: --token is required in CLI mode")
 			os.Exit(1)
 		}
-		runBatchCLI(h, *batchFile, *spaceID, *token, *lang)
+		runBatchCLI(importURLUC, *batchFile, *spaceID, *token, *lang)
 		return
 	}
 
+	// 4. Initialize MCP Server
+	importToolsReg := func(server *mcp_sdk.Server) {
+		mcp.RegisterImportTools(server, importURLUC, importTextUC, taskManager)
+	}
+
+	mcpServer := mcp.BuildMCPServer(
+		tandoorClient,
+		importToolsReg,
+		recipeCreateUC,
+		recipeGetUC,
+		recipeUpdateUC,
+		recipeDeleteUC,
+		tagCreateUC,
+		tagGetUC,
+		tagUpdateUC,
+		tagDeleteUC,
+		bookCreateUC,
+		bookGetUC,
+		bookUpdateUC,
+		bookDeleteUC,
+		ingCreateUC,
+		ingGetUC,
+		ingUpdateUC,
+		ingDeleteUC,
+	)
+
 	// MCP Stdio Mode
 	if *mcpFlag {
-		mcpServer := api.BuildMCPServer(h)
-		services.LogJSON("system", "MCP", "Starting MCP server in Stdio mode", "INFO")
-		if err := mcpServer.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
-			services.LogJSON("system", "MCP", "Stdio MCP server failed: "+err.Error(), "ERROR")
+		logger.LogJSON("system", "MCP", "Starting MCP server in Stdio mode", "INFO")
+		if err := mcpServer.Run(context.Background(), &mcp_sdk.StdioTransport{}); err != nil {
+			logger.LogJSON("system", "MCP", "Stdio MCP server failed: "+err.Error(), "ERROR")
 			os.Exit(1)
 		}
 		return
 	}
 
 	// Server Mode
-	runServer(h)
+	runServer(h, mcpServer)
 }
 
-func runBatchCLI(h *api.Handler, filePath string, spaceID string, token string, lang string) {
+func runBatchCLI(importURLUC *import_recipe.ImportURLUseCase, filePath string, spaceID string, token string, lang string) {
 	cid := fmt.Sprintf("batch-%d", time.Now().Unix())
-	services.LogJSON(cid, "CLI", fmt.Sprintf("Starting CLI batch import from %s in space %s (Target Language: %s)", filePath, spaceID, lang), "INFO")
+	logger.LogJSON(cid, "CLI", fmt.Sprintf("Starting CLI batch import from %s in space %s (Target Language: %s)", filePath, spaceID, lang), "INFO")
 
 	file, err := os.Open(filePath)
 	if err != nil {
-		services.LogJSON(cid, "CLI", "Failed to open file: "+err.Error(), "ERROR")
+		logger.LogJSON(cid, "CLI", "Failed to open file: "+err.Error(), "ERROR")
 		return
 	}
 	defer file.Close()
@@ -91,100 +168,30 @@ func runBatchCLI(h *api.Handler, filePath string, spaceID string, token string, 
 	scanner := bufio.NewScanner(file)
 	count := 0
 
+	ctx := context.Background()
 	for scanner.Scan() {
 		url := strings.TrimSpace(scanner.Text())
 		if url != "" && !strings.HasPrefix(url, "#") {
 			count++
-			h.ProcessURL(url, spaceID, spaceID, "CLI User", lang, false, token, cid)
+			importURLUC.Execute(ctx, url, spaceID, spaceID, "CLI User", lang, false, token, cid)
 		}
 	}
 
-	services.LogJSON(cid, "CLI", fmt.Sprintf("Finished processing %d URLs sequentially", count), "INFO")
+	logger.LogJSON(cid, "CLI", fmt.Sprintf("Finished processing %d URLs sequentially", count), "INFO")
 }
 
-func setupServer(h *api.Handler) *echo.Echo {
-	e := echo.New()
+func runServer(h *api.ApiHandler, mcpServer *mcp_sdk.Server) {
+	sseHandler := mcp_sdk.NewSSEHandler(func(req *http.Request) *mcp_sdk.Server {
+		return mcpServer
+	}, nil)
 
-	// Middleware Correlation ID
-	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			rid := c.Request().Header.Get("X-Correlation-ID")
-			if rid == "" {
-				rid = fmt.Sprintf("%d", time.Now().UnixNano())
-				c.Request().Header.Set("X-Correlation-ID", rid)
-			}
-			c.Response().Header().Set("X-Correlation-ID", rid)
-			return next(c)
-		}
-	})
-
-	// Logger JSON
-	e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
-		Format: `{"timestamp":"${time_rfc3339}","correlation-id":"${header:X-Correlation-ID}","remote_ip":"${remote_ip}",` +
-			`"host":"${host}","method":"${method}","uri":"${uri}","status":${status},` +
-			`"latency_human":"${latency_human}","bytes_out":${bytes_out}}` + "\n",
-	}))
-	
-	e.Use(middleware.Recover())
-
-    // Web UI
-    e.GET("/", h.ShowIndex)
-    e.GET("/imports", h.ShowImports)
-    e.GET("/tools", h.ShowTools)
-    e.GET("/api/spaces", h.GetSpaces)
-    e.POST("/api/login", h.Login)
-    e.POST("/api/logout", h.Logout)
-    e.GET("/api/logs", h.GetLogs)
-    e.GET("/api/logs/:CorrelationID", h.GetLogsByCorrelationID)
-
-	// API
-	e.GET("/import", h.ImportRecipe)
-	e.POST("/import-text", h.ImportRecipeFromText)
-	e.POST("/import-images", h.ImportRecipeFromImages)
-	e.POST("/import-custom", h.ImportRecipeCustom)
-    e.GET("/import/:CorrelationID", h.ShowImportProgress)
-    e.DELETE("/api/recipe/:id", h.DeleteRecipe)
-
-    // Tools API
-    e.GET("/api/tools/books", h.GetRecipeBooks)
-    e.GET("/api/tools/duplicates", h.GetDuplicates)
-    e.POST("/api/tools/clean-duplicates", h.CleanDuplicates)
-    e.GET("/api/tools/suggest-book-recipes/stream", h.SuggestBookRecipesStream)
-    e.POST("/api/tools/add-recipes-to-book", h.AddRecipesToBook)
-
-	// MCP Server (SSE Mode)
-	mcpServer := api.NewMCPServer(h)
-	e.Any("/sse", func(c echo.Context) error {
-		req := c.Request()
-		token := req.Header.Get("Authorization")
-		if strings.HasPrefix(token, "Bearer ") {
-			token = strings.TrimPrefix(token, "Bearer ")
-		}
-		if token == "" {
-			token = req.Header.Get("X-Tandoor-Token")
-		}
-		if token == "" {
-			token = req.URL.Query().Get("token")
-		}
-
-		ctx := context.WithValue(req.Context(), "tandoor_token", token)
-		c.SetRequest(req.WithContext(ctx))
-
-		mcpServer.ServeHTTP(c.Response().Writer, c.Request())
-		return nil
-	})
-
-	return e
-}
-
-func runServer(h *api.Handler) {
-	e := setupServer(h)
+	e := api.SetupServer(h, sseHandler)
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 	
-	services.LogJSON("system", "Main", "HTTP server starting on port "+port, "INFO")
+	logger.LogJSON("system", "Main", "HTTP server starting on port "+port, "INFO")
 	e.Logger.Fatal(e.Start(":" + port))
 }

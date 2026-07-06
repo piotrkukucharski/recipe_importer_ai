@@ -7,8 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"recipe_importer_ai/api"
-	"recipe_importer_ai/services"
+	"recipe_importer_ai/infrastructure/api"
 	"testing"
 
 	"github.com/joho/godotenv"
@@ -19,7 +18,6 @@ import (
 func TestImportRecipeFromTextHandler(t *testing.T) {
 	_ = godotenv.Load("../.env")
 
-	// Skip if missing config
 	if os.Getenv("GEMINI_KEY") == "" || os.Getenv("TANDOOR_URL") == "" {
 		t.Skip("Skipping test: GEMINI_KEY or TANDOOR_URL not set")
 	}
@@ -37,7 +35,6 @@ func TestImportRecipeFromTextHandler(t *testing.T) {
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	req.Header.Set("X-Correlation-ID", "test-text-cid")
 	
-	// Add mock auth cookie to request
 	cookie := &http.Cookie{
 		Name:  "tandoor_token",
 		Value: "test-token",
@@ -47,18 +44,11 @@ func TestImportRecipeFromTextHandler(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
-	gemini, err := services.NewGeminiService(context.Background())
+	h, err := setupTestHandler(context.Background())
 	if err != nil {
 		t.Skip("Gemini key is invalid/expired or could not initialize client")
 	}
-	tandoor := services.NewTandoorService()
 
-	h := &api.Handler{
-		Gemini:  gemini,
-		Tandoor: tandoor,
-	}
-
-	// Call the handler
 	err = h.ImportRecipeFromText(c)
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusAccepted, rec.Code)

@@ -1,4 +1,4 @@
-package services
+package tandoor
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"recipe_importer_ai/infrastructure/logger"
 	"recipe_importer_ai/models"
 	"strings"
 	"time"
@@ -97,7 +98,7 @@ func (s *TandoorService) getWithRetry(path string, spaceID string, token string,
 	for i := 0; i < maxRetries; i++ {
 		if i > 0 {
 			time.Sleep(retryInterval * time.Duration(i))
-			LogJSON(correlationID, "Tandoor", fmt.Sprintf("Retrying GET %s (attempt %d/%d)", path, i+1, maxRetries), "INFO")
+			logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Retrying GET %s (attempt %d/%d)", path, i+1, maxRetries), "INFO")
 		}
 
 		if spaceID != "" {
@@ -136,22 +137,22 @@ func (s *TandoorService) getWithRetry(path string, spaceID string, token string,
 }
 
 func (s *TandoorService) SaveRecipe(recipe *models.Recipe, spaceID string, token string, correlationID string) (map[string]interface{}, error) {
-	LogJSON(correlationID, "Tandoor", fmt.Sprintf("Starting recipe save process for space %s: %s", spaceID, recipe.Name), "INFO")
+	logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Starting recipe save process for space %s: %s", spaceID, recipe.Name), "INFO")
 	
 	// 0. Check if recipe already exists
 	exists, err := s.recipeExists(recipe.SourceURL, spaceID, token, correlationID)
 	if err != nil {
-		LogJSON(correlationID, "Tandoor", fmt.Sprintf("Error checking if recipe exists: %v", err), "ERROR")
+		logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Error checking if recipe exists: %v", err), "ERROR")
 		return nil, err
 	}
 	if exists {
-		LogJSON(correlationID, "Tandoor", fmt.Sprintf("Recipe from URL '%s' already exists in space %s, skipping", recipe.SourceURL, spaceID), "INFO")
+		logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Recipe from URL '%s' already exists in space %s, skipping", recipe.SourceURL, spaceID), "INFO")
 		return nil, nil
 	}
 
 	// 1. Process steps and ingredients to ensure everything exists
 	for i, step := range recipe.Steps {
-		LogJSON(correlationID, "Tandoor", fmt.Sprintf("Checking step %d: %s", i+1, step.Name), "INFO")
+		logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Checking step %d: %s", i+1, step.Name), "INFO")
 		for _, ing := range step.Ingredients {
 			unitName := ing.Unit.Name
 			if unitName == "" {
@@ -169,16 +170,16 @@ func (s *TandoorService) SaveRecipe(recipe *models.Recipe, spaceID string, token
 		}
 	}
 
-    // 1b. Process keywords
-    keywordObjs := []map[string]interface{}{}
-    for _, kw := range recipe.Keywords {
-        kid, err := s.getOrCreateKeyword(kw, spaceID, token, correlationID)
-        if err == nil && kid > 0 {
-            keywordObjs = append(keywordObjs, map[string]interface{}{"id": kid, "name": kw})
-        } else {
-            keywordObjs = append(keywordObjs, map[string]interface{}{"name": kw})
-        }
-    }
+	// 1b. Process keywords
+	keywordObjs := []map[string]interface{}{}
+	for _, kw := range recipe.Keywords {
+		kid, err := s.getOrCreateKeyword(kw, spaceID, token, correlationID)
+		if err == nil && kid > 0 {
+			keywordObjs = append(keywordObjs, map[string]interface{}{"id": kid, "name": kw})
+		} else {
+			keywordObjs = append(keywordObjs, map[string]interface{}{"name": kw})
+		}
+	}
 
 	// 2. Prepare Tandoor Recipe object
 	tandoorRecipe := map[string]interface{}{
@@ -189,25 +190,25 @@ func (s *TandoorService) SaveRecipe(recipe *models.Recipe, spaceID string, token
 		"servings":     recipe.Servings,
 		"source_url":   recipe.SourceURL,
 		"steps":        s.mapSteps(recipe.Steps, spaceID, token, correlationID),
-        "keywords":     keywordObjs,
-        "image_url":    recipe.ImageURL,
+		"keywords":     keywordObjs,
+		"image_url":    recipe.ImageURL,
 	}
 
-	LogJSON(correlationID, "Tandoor", "Sending final recipe to Tandoor API", "INFO")
+	logger.LogJSON(correlationID, "Tandoor", "Sending final recipe to Tandoor API", "INFO")
 	createdRecipe, err := s.postWithRetry("/api/recipe/", tandoorRecipe, spaceID, token, correlationID)
 	if err != nil {
-		LogJSON(correlationID, "Tandoor", fmt.Sprintf("Error saving recipe: %v", err), "ERROR")
+		logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Error saving recipe: %v", err), "ERROR")
 		return nil, err
 	}
 
 	recipeID := int(createdRecipe["id"].(float64))
-	LogJSON(correlationID, "Tandoor", fmt.Sprintf("Recipe successfully created with ID: %d", recipeID), "INFO")
+	logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Recipe successfully created with ID: %d", recipeID), "INFO")
 
 	if recipe.ImageURL != "" {
-		LogJSON(correlationID, "Tandoor", fmt.Sprintf("Setting external image URL: %s", recipe.ImageURL), "INFO")
+		logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Setting external image URL: %s", recipe.ImageURL), "INFO")
 		err := s.updateImageMultipartWithRetry(recipeID, recipe.ImageURL, spaceID, token, correlationID)
 		if err != nil {
-			LogJSON(correlationID, "Tandoor", fmt.Sprintf("Warning: failed to set recipe image: %v", err), "WARN")
+			logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Warning: failed to set recipe image: %v", err), "WARN")
 		}
 	}
 
@@ -219,7 +220,7 @@ func (s *TandoorService) postWithRetry(path string, body interface{}, spaceID st
 	for i := 0; i < maxRetries; i++ {
 		if i > 0 {
 			time.Sleep(retryInterval * time.Duration(i))
-			LogJSON(correlationID, "Tandoor", fmt.Sprintf("Retrying POST %s (attempt %d/%d)", path, i+1, maxRetries), "INFO")
+			logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Retrying POST %s (attempt %d/%d)", path, i+1, maxRetries), "INFO")
 		}
 
 		if spaceID != "" {
@@ -294,12 +295,12 @@ func (s *TandoorService) updateImageMultipartWithRetry(recipeID int, imageURL st
 			bodyBytes, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			lastErr = fmt.Errorf("tandoor error %d: %s", resp.StatusCode, string(bodyBytes))
-			LogJSON(correlationID, "Tandoor", fmt.Sprintf("Failed to update image: %v", lastErr), "ERROR")
+			logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Failed to update image: %v", lastErr), "ERROR")
 			continue
 		}
 		defer resp.Body.Close()
 
-		LogJSON(correlationID, "Tandoor", "Image URL successfully updated via multipart", "INFO")
+		logger.LogJSON(correlationID, "Tandoor", "Image URL successfully updated via multipart", "INFO")
 		return nil
 	}
 	return lastErr
@@ -360,12 +361,12 @@ func (s *TandoorService) UpdateImageFileMultipartWithRetry(recipeID int, imgData
 			bodyBytes, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			lastErr = fmt.Errorf("tandoor error %d: %s", resp.StatusCode, string(bodyBytes))
-			LogJSON(correlationID, "Tandoor", fmt.Sprintf("Failed to update image file: %v", lastErr), "ERROR")
+			logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Failed to update image file: %v", lastErr), "ERROR")
 			continue
 		}
 		defer resp.Body.Close()
 
-		LogJSON(correlationID, "Tandoor", "Image file successfully uploaded via multipart", "INFO")
+		logger.LogJSON(correlationID, "Tandoor", "Image file successfully uploaded via multipart", "INFO")
 		return nil
 	}
 	return lastErr
@@ -405,7 +406,7 @@ func (s *TandoorService) mapIngredients(ingredients []models.Ingredient, spaceID
 }
 
 func (s *TandoorService) getOrCreateFood(name string, spaceID string, token string, correlationID string) (int, error) {
-    if name == "" { return 0, nil }
+	if name == "" { return 0, nil }
 	results, err := s.getRawWithRetry("/api/food/?query="+url.QueryEscape(name), spaceID, token, correlationID)
 	if err != nil {
 		return 0, err
@@ -417,7 +418,7 @@ func (s *TandoorService) getOrCreateFood(name string, spaceID string, token stri
 		}
 	}
 
-	LogJSON(correlationID, "Tandoor", fmt.Sprintf("Food '%s' not found, creating new", name), "INFO")
+	logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Food '%s' not found, creating new", name), "INFO")
 	res, err := s.postWithRetry("/api/food/", map[string]interface{}{"name": name}, spaceID, token, correlationID)
 	if err != nil {
 		return 0, err
@@ -426,7 +427,7 @@ func (s *TandoorService) getOrCreateFood(name string, spaceID string, token stri
 }
 
 func (s *TandoorService) getOrCreateUnit(name string, spaceID string, token string, correlationID string) (int, error) {
-    if name == "" { return 0, nil }
+	if name == "" { return 0, nil }
 	results, err := s.getRawWithRetry("/api/unit/?query="+url.QueryEscape(name), spaceID, token, correlationID)
 	if err != nil {
 		return 0, err
@@ -438,7 +439,7 @@ func (s *TandoorService) getOrCreateUnit(name string, spaceID string, token stri
 		}
 	}
 
-	LogJSON(correlationID, "Tandoor", fmt.Sprintf("Unit '%s' not found, creating new", name), "INFO")
+	logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Unit '%s' not found, creating new", name), "INFO")
 	res, err := s.postWithRetry("/api/unit/", map[string]interface{}{"name": name}, spaceID, token, correlationID)
 	if err != nil {
 		return 0, err
@@ -447,28 +448,28 @@ func (s *TandoorService) getOrCreateUnit(name string, spaceID string, token stri
 }
 
 func (s *TandoorService) getOrCreateKeyword(name string, spaceID string, token string, correlationID string) (int, error) {
-    if name == "" { return 0, nil }
-    results, err := s.getRawWithRetry("/api/keyword/?query="+url.QueryEscape(name), spaceID, token, correlationID)
-    if err != nil {
-        return 0, err
-    }
+	if name == "" { return 0, nil }
+	results, err := s.getRawWithRetry("/api/keyword/?query="+url.QueryEscape(name), spaceID, token, correlationID)
+	if err != nil {
+		return 0, err
+	}
 
-    for _, res := range results {
-        if stringsEqual(res["name"].(string), name) {
-            return int(res["id"].(float64)), nil
-        }
-    }
+	for _, res := range results {
+		if stringsEqual(res["name"].(string), name) {
+			return int(res["id"].(float64)), nil
+		}
+	}
 
-    LogJSON(correlationID, "Tandoor", fmt.Sprintf("Keyword '%s' not found, creating new", name), "INFO")
-    res, err := s.postWithRetry("/api/keyword/", map[string]interface{}{"name": name}, spaceID, token, correlationID)
-    if err != nil {
-        return 0, err
-    }
-    return int(res["id"].(float64)), nil
+	logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Keyword '%s' not found, creating new", name), "INFO")
+	res, err := s.postWithRetry("/api/keyword/", map[string]interface{}{"name": name}, spaceID, token, correlationID)
+	if err != nil {
+		return 0, err
+	}
+	return int(res["id"].(float64)), nil
 }
 
 func (s *TandoorService) DeleteRecipe(recipeID string, token string, correlationID string) error {
-	LogJSON(correlationID, "Tandoor", fmt.Sprintf("Requesting deletion of recipe ID: %s", recipeID), "INFO")
+	logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Requesting deletion of recipe ID: %s", recipeID), "INFO")
 	
 	path := fmt.Sprintf("/api/recipe/%s/", recipeID)
 	req, _ := http.NewRequest("DELETE", s.BaseURL+path, nil)
@@ -485,7 +486,7 @@ func (s *TandoorService) DeleteRecipe(recipeID string, token string, correlation
 		return fmt.Errorf("failed to delete recipe %s: %s", recipeID, string(bodyBytes))
 	}
 
-	LogJSON(correlationID, "Tandoor", fmt.Sprintf("Recipe %s successfully deleted", recipeID), "INFO")
+	logger.LogJSON(correlationID, "Tandoor", fmt.Sprintf("Recipe %s successfully deleted", recipeID), "INFO")
 	return nil
 }
 
@@ -664,7 +665,6 @@ func (s *TandoorService) GetRecipes(spaceID string, token string, correlationID 
 			if err != nil {
 				break
 			}
-			// Use RequestURI to get path + query
 			path = u.RequestURI()
 		} else {
 			path = ""
@@ -821,5 +821,3 @@ func (s *TandoorService) GetKeywords(spaceID string, token string, correlationID
 	}
 	return allKeywords, nil
 }
-
-

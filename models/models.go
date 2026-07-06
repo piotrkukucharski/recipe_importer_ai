@@ -33,3 +33,14 @@ type Food struct {
 type Unit struct {
 	Name string `json:"name"`
 }
+
+func GetRecipeID(recipe map[string]interface{}) int {
+	if idVal, exists := recipe["id"]; exists {
+		if idFloat, ok := idVal.(float64); ok {
+			return int(idFloat)
+		} else if idInt, ok := idVal.(int); ok {
+			return idInt
+		}
+	}
+	return 0
+}

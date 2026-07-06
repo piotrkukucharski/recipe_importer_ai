@@ -1,0 +1,9 @@
+Analyze this image in the context of a recipe for: "{{.RecipeName}}".
+Rate this image on a scale of 0 to 10 based on these criteria:
+- 10: Perfect, high-quality photo of the FINAL, finished dish.
+- 7-9: Good photo of the finished dish, but maybe lower quality or slightly off-center.
+- 4-6: Photo of the dish but looks like a step-by-step process photo or contains unnecessary elements.
+- 1-3: Photo of an ingredient, or very loosely related to the dish.
+- 0: Icon, logo, advertisement, or completely unrelated image.
+
+Return ONLY the numeric score (e.g. "8"). Do not add any text.

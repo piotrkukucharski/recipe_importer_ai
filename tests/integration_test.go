@@ -5,8 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"recipe_importer_ai/api"
-	"recipe_importer_ai/services"
+	"recipe_importer_ai/infrastructure/apify"
 	"testing"
 
 	"github.com/joho/godotenv"
@@ -16,7 +15,7 @@ import (
 
 // URL Recognition tests
 func TestURLRecognition(t *testing.T) {
-	apify := services.NewApifyService()
+	apifySvc := apify.NewApifyService()
 
 	tests := []struct {
 		url      string
@@ -30,13 +29,13 @@ func TestURLRecognition(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		actor, _ := apify.GetActorAndInput(tt.url)
+		actor, _ := apifySvc.GetActorAndInput(tt.url)
 		assert.Equal(t, tt.expected, actor)
 	}
 }
 
 func TestInstagramProfileRecognition(t *testing.T) {
-	apify := services.NewApifyService()
+	apifySvc := apify.NewApifyService()
 
 	tests := []struct {
 		url      string
@@ -49,7 +48,7 @@ func TestInstagramProfileRecognition(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		assert.Equal(t, tt.expected, apify.IsInstagramProfile(tt.url))
+		assert.Equal(t, tt.expected, apifySvc.IsInstagramProfile(tt.url))
 	}
 }
 
@@ -67,38 +66,32 @@ func TestFullImportFlow(t *testing.T) {
 	rec := httptest.NewRecorder()
 	_ = e.NewContext(req, rec)
 
-	apify := services.NewApifyService()
-	gemini, err := services.NewGeminiService(context.Background())
+	h, err := setupTestHandler(context.Background())
 	if err != nil {
-		t.Fatalf("Gemini initialization error: %v", err)
-	}
-	tandoor := services.NewTandoorService()
-
-	h := &api.Handler{
-		Apify:   apify,
-		Gemini:  gemini,
-		Tandoor: tandoor,
+		t.Fatalf("setupTestHandler error: %v", err)
 	}
 
 	// 1. Scrape
-	items, err := h.Apify.ScrapeItems(testURL, "test-cid")
+	items, err := h.Tandoor.GetRecipes("", "", "") // Just placeholder or call apify directly
+	_ = items
+	itemsScraped, err := h.ImportURLUC.Apify.ScrapeItems(testURL, "test-cid")
 	if err != nil {
 		t.Fatalf("Scrape error: %v", err)
 	}
 
-	if len(items) > 0 {
-		item := items[0]
-		// 2. Process with Gemini
-		recipes, err := h.Gemini.ProcessRecipe(context.Background(), item.Text, item.Images, "Polish", false, "test-cid")
+	if len(itemsScraped) > 0 {
+		item := itemsScraped[0]
+		// 2. Process with Gemini via our processor
+		recipes, err := h.ImportURLUC.Processor.ProcessRecipe(context.Background(), item.Text, item.Images, "Polish", false, "test-cid")
 		if err != nil {
 			t.Fatalf("Gemini error: %v", err)
 		}
-		for _, recipe := range recipes {
-			recipe.SourceURL = testURL
-			recipe.ImageURL = item.ImageURL
+		for _, recipeObj := range recipes {
+			recipeObj.SourceURL = testURL
+			recipeObj.ImageURL = item.ImageURL
 
 			// 3. Save to Tandoor
-			if _, err := h.Tandoor.SaveRecipe(recipe, "", "test-token", "test-cid"); err != nil {
+			if _, err := h.Tandoor.SaveRecipe(recipeObj, "", "test-token", "test-cid"); err != nil {
 				t.Fatalf("Tandoor error: %v", err)
 			}
 		}
