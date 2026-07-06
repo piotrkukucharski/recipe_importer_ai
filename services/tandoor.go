@@ -798,4 +798,28 @@ func (s *TandoorService) DeleteWithRetry(path string, spaceID string, token stri
 	return lastErr
 }
 
+func (s *TandoorService) GetKeywords(spaceID string, token string, correlationID string) ([]map[string]interface{}, error) {
+	var allKeywords []map[string]interface{}
+	path := "/api/keyword/?page_size=200"
+
+	for path != "" {
+		results, nextURL, err := s.getRawWithPagination(path, spaceID, token, correlationID)
+		if err != nil {
+			return nil, err
+		}
+		allKeywords = append(allKeywords, results...)
+		
+		if nextURL != "" {
+			u, err := url.Parse(nextURL)
+			if err != nil {
+				break
+			}
+			path = u.RequestURI()
+		} else {
+			path = ""
+		}
+	}
+	return allKeywords, nil
+}
+
 

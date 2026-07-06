@@ -981,6 +981,26 @@ func getRecipeID(recipe map[string]interface{}) int {
 	return 0
 }
 
+func recipeHasTag(r map[string]interface{}, relatedTagsMap map[string]bool) bool {
+	if kws, ok := r["keywords"].([]interface{}); ok {
+		for _, kw := range kws {
+			if kwMap, ok := kw.(map[string]interface{}); ok {
+				if label, ok := kwMap["label"].(string); ok && label != "" {
+					if relatedTagsMap[strings.ToLower(label)] {
+						return true
+					}
+				}
+				if name, ok := kwMap["name"].(string); ok && name != "" {
+					if relatedTagsMap[strings.ToLower(name)] {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (h *Handler) SuggestBookRecipesStream(c echo.Context) error {
 	w := c.Response()
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -1018,6 +1038,35 @@ func (h *Handler) SuggestBookRecipesStream(c echo.Context) error {
 	bookName, _ := book["name"].(string)
 	bookDesc, _ := book["description"].(string)
 
+	// 1b. Fetch all used tags in recipes
+	sendStatus("Fetching all recipe tags/keywords...")
+	keywords, err := h.Tandoor.GetKeywords(spaceID, token, correlationID)
+	if err != nil {
+		sendSSEEvent(w, "error", map[string]string{"message": fmt.Sprintf("Failed to get keywords: %v", err)})
+		return nil
+	}
+
+	var tagNames []string
+	for _, kw := range keywords {
+		if name, ok := kw["name"].(string); ok && name != "" {
+			tagNames = append(tagNames, name)
+		}
+	}
+
+	// Filter related tags using LLM
+	sendStatus("Selecting cookbook-related tags using AI...")
+	ctx := context.Background()
+	relatedTags, err := h.Gemini.SelectRelatedTags(ctx, bookName, bookDesc, tagNames, correlationID)
+	if err != nil {
+		sendSSEEvent(w, "error", map[string]string{"message": fmt.Sprintf("AI tag filtering failed: %v", err)})
+		return nil
+	}
+
+	relatedTagsMap := make(map[string]bool)
+	for _, tag := range relatedTags {
+		relatedTagsMap[strings.ToLower(tag)] = true
+	}
+
 	// 2. Get book entries
 	sendStatus("Fetching recipes currently in the book...")
 	bookEntries, err := h.Tandoor.GetRecipeBookEntries(bookID, spaceID, token, correlationID)
@@ -1050,14 +1099,20 @@ func (h *Handler) SuggestBookRecipesStream(c echo.Context) error {
 	}
 
 	var candidates []map[string]interface{}
+	var autoMatchedRecipes []map[string]interface{}
+
 	for _, r := range allRecipes {
 		id := getRecipeID(r)
 		if id > 0 && !inBookMap[id] {
-			candidates = append(candidates, r)
+			if recipeHasTag(r, relatedTagsMap) {
+				autoMatchedRecipes = append(autoMatchedRecipes, r)
+			} else {
+				candidates = append(candidates, r)
+			}
 		}
 	}
 
-	if len(candidates) == 0 {
+	if len(candidates) == 0 && len(autoMatchedRecipes) == 0 {
 		sendSSEEvent(w, "recipes", []interface{}{})
 		sendStatus("Complete")
 		return nil
@@ -1082,17 +1137,19 @@ func (h *Handler) SuggestBookRecipesStream(c echo.Context) error {
 		}
 	}
 
-	// 5. Ask Gemini to classify
-	sendStatus("Analyzing recipes using Gemini AI...")
-	if len(candidates) > 100 {
-		candidates = candidates[:100]
-	}
-
-	ctx := context.Background()
-	matchedIDs, err := h.Gemini.ClassifyRecipesForBook(ctx, bookName, bookDesc, existingExamples, candidates, correlationID)
-	if err != nil {
-		sendSSEEvent(w, "error", map[string]string{"message": fmt.Sprintf("Gemini classification failed: %v", err)})
-		return nil
+	// 5. Ask Gemini to classify remaining candidates (ignoring tag-matched ones)
+	var matchedIDs []int
+	if len(candidates) > 0 {
+		sendStatus("Analyzing remaining recipes using Gemini AI...")
+		if len(candidates) > 100 {
+			candidates = candidates[:100]
+		}
+		var err error
+		matchedIDs, err = h.Gemini.ClassifyRecipesForBook(ctx, bookName, bookDesc, existingExamples, candidates, correlationID)
+		if err != nil {
+			sendSSEEvent(w, "error", map[string]string{"message": fmt.Sprintf("Gemini classification failed: %v", err)})
+			return nil
+		}
 	}
 
 	matchedMap := make(map[int]bool)
@@ -1101,6 +1158,10 @@ func (h *Handler) SuggestBookRecipesStream(c echo.Context) error {
 	}
 
 	var suggestedRecipes []map[string]interface{}
+	// Add all auto-matched recipes first
+	suggestedRecipes = append(suggestedRecipes, autoMatchedRecipes...)
+
+	// Add recipes classified as matching by Gemini
 	for _, r := range candidates {
 		id := getRecipeID(r)
 		if id > 0 && matchedMap[id] {

@@ -523,7 +523,7 @@ func (s *GeminiService) ClassifyRecipesForBook(ctx context.Context, bookName str
 		return []int{}, nil
 	}
 
-	model := s.Client.GenerativeModel("gemini-3.1-pro-preview")
+	model := s.Client.GenerativeModel("gemini-2.5-flash")
 	model.ResponseMIMEType = "application/json"
 
 	// Format existing recipes as examples
@@ -622,5 +622,65 @@ Return the result as a strictly formatted JSON object matching the structure bel
 
 	LogJSON(correlationID, "Gemini", fmt.Sprintf("AI classification complete. Found %d matching recipes", len(result.MatchedRecipeIDs)), "INFO")
 	return result.MatchedRecipeIDs, nil
+}
+
+func (s *GeminiService) SelectRelatedTags(ctx context.Context, bookName string, bookDesc string, tags []string, correlationID string) ([]string, error) {
+	LogJSON(correlationID, "Gemini", fmt.Sprintf("Filtering %d tags for book '%s' using AI", len(tags), bookName), "INFO")
+	if len(tags) == 0 {
+		return []string{}, nil
+	}
+
+	model := s.Client.GenerativeModel("gemini-2.5-flash")
+	model.ResponseMIMEType = "application/json"
+
+	tagsList := strings.Join(tags, "\n")
+
+	prompt := fmt.Sprintf(`
+You are a culinary AI assistant. Your task is to filter a list of available tags and select only those tags that are *strictly* and *fully* related to the recipe book named "%s" (description: "%s").
+
+Strict relevance rules:
+1. Every single recipe carrying the selected tag must naturally fit into this recipe book. If a tag is too broad (e.g. the book is "Birthday Dishes" and the tag is "cakes", this tag is too broad because not all cakes are birthday dishes), do NOT select it.
+2. If the book is "Vegetarian Dishes" ("Dania wegetariańskie"), select tags like "vegetarian", "vegan", "danie wegetariańskie", "danie wegańskie".
+3. If the book is "Vegan Dishes" ("Dania wegańskie"), select ONLY the tag "vegan" / "danie wegańskie" (since vegetarian dishes are not necessarily vegan).
+4. If the book is "Beverages" ("Napoje"), select tags like "drinks", "non-alcoholic drinks", "alcoholic drinks", "beverages", "kombucha", "lemonade", etc.
+5. In most cases, the result will be an EMPTY list because the recipe book name is too specific (e.g. "Dinner with Friends", "Birthday Dishes") and no single tag strictly guarantees inclusion.
+
+Available tags:
+%s
+
+Return the result as a strictly formatted JSON object matching the structure below:
+{
+  "selected_tags": ["tag1", "tag2"]
+}
+`, bookName, bookDesc, tagsList)
+
+	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+	if err != nil {
+		LogJSON(correlationID, "Gemini", fmt.Sprintf("Error selecting related tags: %v", err), "ERROR")
+		return nil, err
+	}
+
+	if len(resp.Candidates) == 0 || resp.Candidates[0].Content == nil {
+		return nil, fmt.Errorf("no response from gemini")
+	}
+
+	var fullResponse strings.Builder
+	for _, part := range resp.Candidates[0].Content.Parts {
+		fullResponse.WriteString(fmt.Sprintf("%v", part))
+	}
+
+	rawStr := fullResponse.String()
+	jsonStr := extractJSON(rawStr)
+
+	var result struct {
+		SelectedTags []string `json:"selected_tags"`
+	}
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+		LogJSON(correlationID, "Gemini", fmt.Sprintf("Failed to unmarshal SelectedTags: %s. Raw: %s", err, rawStr), "ERROR")
+		return nil, err
+	}
+
+	LogJSON(correlationID, "Gemini", fmt.Sprintf("Tag filtering complete. Selected tags: %v", result.SelectedTags), "INFO")
+	return result.SelectedTags, nil
 }
 
