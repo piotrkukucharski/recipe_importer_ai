@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"recipe_importer_ai/services"
 	"strings"
 	"time"
@@ -17,7 +18,10 @@ import (
 func getAuthAndCid(ctx context.Context, operation string) (string, string, error) {
 	token, ok := ctx.Value("tandoor_token").(string)
 	if !ok || token == "" {
-		return "", "", errors.New("missing Tandoor authorization token; please provide it in the 'Authorization: Bearer <token>', 'X-Tandoor-Token' header, or '?token=' query parameter")
+		token = os.Getenv("TANDOOR_BEARER_TOKEN")
+	}
+	if token == "" {
+		return "", "", errors.New("missing Tandoor authorization token; please provide it in request headers/query (SSE mode) or set TANDOOR_BEARER_TOKEN environment variable (Stdio mode)")
 	}
 	cid := fmt.Sprintf("mcp-%s-%d", operation, time.Now().UnixNano())
 	return token, cid, nil
@@ -158,8 +162,8 @@ type DeleteIngredientArgs struct {
 	Id    string `json:"id" jsonschema:"description=The ID of the ingredient to delete"`
 }
 
-// NewMCPServer initializes the MCP server and registers the recipe management tools
-func NewMCPServer(h *Handler) *mcp.SSEHandler {
+// BuildMCPServer initializes the MCP server and registers the recipe management tools
+func BuildMCPServer(h *Handler) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "Recipe Importer AI",
 		Version: "1.0.0",
@@ -644,10 +648,14 @@ func NewMCPServer(h *Handler) *mcp.SSEHandler {
 		return newToolResultText(fmt.Sprintf("Ingredient %s deleted successfully.", args.Id)), nil, nil
 	})
 
-	// Create the SSE handler that exposes the server
+	return server
+}
+
+// NewMCPServer wraps BuildMCPServer in an SSEHandler for web usage
+func NewMCPServer(h *Handler) *mcp.SSEHandler {
+	server := BuildMCPServer(h)
 	sseHandler := mcp.NewSSEHandler(func(req *http.Request) *mcp.Server {
 		return server
 	}, nil)
-
 	return sseHandler
 }

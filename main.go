@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -22,6 +23,7 @@ func main() {
 	spaceID := flag.String("space", "", "Tandoor Space ID for CLI import")
 	lang := flag.String("lang", "Polish", "Target language for recipes (e.g., Polish, English, German)")
 	token := flag.String("token", "", "Tandoor bearer token for CLI import")
+	mcpFlag := flag.Bool("mcp", false, "Start MCP server in Stdio mode")
 	flag.Parse()
 
 	// Load .env file
@@ -55,6 +57,17 @@ func main() {
 			os.Exit(1)
 		}
 		runBatchCLI(h, *batchFile, *spaceID, *token, *lang)
+		return
+	}
+
+	// MCP Stdio Mode
+	if *mcpFlag {
+		mcpServer := api.BuildMCPServer(h)
+		services.LogJSON("system", "MCP", "Starting MCP server in Stdio mode", "INFO")
+		if err := mcpServer.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+			services.LogJSON("system", "MCP", "Stdio MCP server failed: "+err.Error(), "ERROR")
+			os.Exit(1)
+		}
 		return
 	}
 
