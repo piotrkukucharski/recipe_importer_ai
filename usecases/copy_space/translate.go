@@ -40,7 +40,7 @@ func (t *Translator) DetectLanguage(ctx context.Context, text string, cid string
 		return "", err
 	}
 
-	res, err := t.Gemini.GenerateRawText(ctx, "gemini-2.5-flash", buf.String())
+	res, err := t.Gemini.GenerateRawText(ctx, "gemini-3.5-flash", buf.String())
 	if err != nil {
 		return "", err
 	}
@@ -72,7 +72,7 @@ func (t *Translator) TranslateRecipe(ctx context.Context, recipe *models.Recipe,
 	}
 
 	logger.LogJSON(cid, "Gemini", "Translating recipe structure using LLM", "INFO")
-	rawJSON, err := t.Gemini.GenerateJSON(ctx, "gemini-2.5-flash", buf.String())
+	rawJSON, err := t.Gemini.GenerateJSON(ctx, "gemini-3.5-flash", buf.String())
 	if err != nil {
 		return nil, err
 	}
