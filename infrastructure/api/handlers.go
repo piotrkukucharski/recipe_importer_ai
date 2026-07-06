@@ -13,6 +13,7 @@ import (
 	"recipe_importer_ai/infrastructure/web"
 	"recipe_importer_ai/usecases/auth"
 	"recipe_importer_ai/usecases/cookbook"
+	"recipe_importer_ai/usecases/copy_space"
 	"recipe_importer_ai/usecases/duplicates"
 	"recipe_importer_ai/usecases/import_recipe"
 	"recipe_importer_ai/usecases/recipe"
@@ -35,6 +36,7 @@ type ApiHandler struct {
 	ImportImageUC     *import_recipe.ImportImageUseCase
 	TaskManager       *import_recipe.TaskManager
 	DeleteRecipeUC    *recipe.DeleteUseCase
+	CopyUC            *copy_space.CopyUseCase
 
 	tokenToUsername map[string]string
 	tokenToUserMu   sync.Mutex
@@ -52,6 +54,7 @@ func NewApiHandler(
 	ii *import_recipe.ImportImageUseCase,
 	tm *import_recipe.TaskManager,
 	dr *recipe.DeleteUseCase,
+	cp *copy_space.CopyUseCase,
 ) *ApiHandler {
 	return &ApiHandler{
 		Tandoor:           t,
@@ -65,6 +68,7 @@ func NewApiHandler(
 		ImportImageUC:     ii,
 		TaskManager:       tm,
 		DeleteRecipeUC:    dr,
+		CopyUC:            cp,
 		tokenToUsername:   make(map[string]string),
 	}
 }
@@ -659,4 +663,74 @@ type ImportTextRequest struct {
 	SpaceID string `json:"space"`
 	Lang    string `json:"lang"`
 	Multi   bool   `json:"multi"`
+}
+
+func (h *ApiHandler) GetSpaceRecipes(c echo.Context) error {
+	spaceID := c.QueryParam("space_id")
+	token := h.getToken(c)
+	if token == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+	}
+	correlationID := c.Request().Header.Get("X-Correlation-ID")
+
+	recipes, err := h.Tandoor.GetRecipes(spaceID, token, correlationID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, recipes)
+}
+
+func (h *ApiHandler) CopySpaceStream(c echo.Context) error {
+	mode := c.QueryParam("mode") // "books" or "recipes"
+	sourceSpace := c.QueryParam("source_space")
+	targetSpace := c.QueryParam("target_space")
+	targetLang := c.QueryParam("target_lang")
+	importTags := c.QueryParam("import_tags") != "false"
+
+	idsStr := c.QueryParam("ids")
+	var ids []int
+	for _, idStr := range strings.Split(idsStr, ",") {
+		var id int
+		if _, err := fmt.Sscanf(idStr, "%d", &id); err == nil && id > 0 {
+			ids = append(ids, id)
+		}
+	}
+
+	token := h.getToken(c)
+	if token == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+	}
+	correlationID := c.Request().Header.Get("X-Correlation-ID")
+
+	w := c.Response()
+	w.Header().Set(echo.HeaderContentType, "text/event-stream")
+	w.Header().Set(echo.HeaderCacheControl, "no-cache")
+	w.Header().Set(echo.HeaderConnection, "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	sendEvent := func(event string, data interface{}) {
+		payload, _ := json.Marshal(data)
+		fmt.Fprintf(w.Writer, "event: %s\ndata: %s\n\n", event, string(payload))
+		w.Flush()
+	}
+
+	sendStatus := func(status string) {
+		sendEvent("status", map[string]string{"message": status})
+	}
+
+	if len(ids) == 0 {
+		sendEvent("error", map[string]string{"message": "No items selected"})
+		return nil
+	}
+
+	ctx := c.Request().Context()
+	err := h.CopyUC.Copy(ctx, mode, ids, sourceSpace, targetSpace, targetLang, importTags, token, correlationID, sendStatus)
+	if err != nil {
+		sendEvent("error", map[string]string{"message": err.Error()})
+		return nil
+	}
+
+	sendStatus("Copy process completed successfully!")
+	sendEvent("complete", map[string]string{"message": "Finished"})
+	return nil
 }

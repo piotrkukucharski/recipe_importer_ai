@@ -85,10 +85,11 @@
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchTab('duplicates-tab')">Find duplicates</button>
                 <button class="tab-btn" onclick="switchTab('book-tab')">Add to book (AI)</button>
+                <button class="tab-btn" onclick="switchTab('copy-tab')">Copy to Space</button>
             </div>
 
             <!-- Global Space Selection -->
-            <div class="form-group">
+            <div id="space-selection-group" class="form-group">
                 <label for="space">Select Tandoor Space:</label>
                 <select id="space">
                     <option value="">Loading...</option>
@@ -125,6 +126,51 @@
                 </div>
                 <button id="addRecipesBtn" style="display: none; margin-top: 20px;">Add selected recipes to book</button>
             </div>
+
+            <!-- COPY SPACE TAB CONTENT -->
+            <div id="copy-tab" class="tab-content">
+                <div class="form-group">
+                    <label for="copyMode">What to copy:</label>
+                    <select id="copyMode">
+                        <option value="recipes">Recipes</option>
+                        <option value="books">Cookbooks</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="sourceSpace">Source Space:</label>
+                    <select id="sourceSpace">
+                        <option value="">Select space...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="targetSpace">Target Space:</label>
+                    <select id="targetSpace">
+                        <option value="">Select space...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="targetLang">Target Language:</label>
+                    <input type="text" id="targetLang" value="Polish" placeholder="e.g. Polish, English, German">
+                </div>
+                <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="importTags" checked style="transform: scale(1.2);">
+                    <label for="importTags" style="margin: 0; cursor: pointer;">Import tags/keywords</label>
+                </div>
+                <button id="loadCopyItemsBtn" class="secondary">Next: Select items to copy</button>
+
+                <div id="copySelectionSection" style="margin-top: 25px; display: none;">
+                    <h3 id="copyItemsTitle">Select items to copy:</h3>
+                    <div id="copyItemsList" class="recipe-list">
+                        <!-- Items populated dynamically -->
+                    </div>
+                    <button id="startCopyBtn" style="margin-top: 20px;">Start copy process</button>
+                </div>
+
+                <div id="copyProgressSection" style="margin-top: 25px; display: none;">
+                    <h3>Execution logs:</h3>
+                    <textarea id="copyLogs" rows="10" readonly style="font-family: monospace; background: #222; color: #a9ffaf;"></textarea>
+                </div>
+            </div>
         </div>
         {{template "footer" .}}
     </div>
@@ -157,6 +203,7 @@
             mainApp.style.display = 'block';
             navbar.style.display = 'flex';
             loadSpaces();
+            loadCopySpaces();
         }
 
         function showLogin() {
@@ -184,8 +231,11 @@
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
-            const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => btn.textContent.toLowerCase().includes(tabId.split('-')[0] === 'duplicates' ? 'duplicates' : 'book'));
-            if (activeBtn) activeBtn.classList.add('active');
+            const tabBtnIndex = tabId === 'duplicates-tab' ? 0 : (tabId === 'book-tab' ? 1 : 2);
+            document.querySelectorAll('.tab-btn')[tabBtnIndex].classList.add('active');
+
+            const isCopy = tabId === 'copy-tab';
+            document.getElementById('space-selection-group').style.display = isCopy ? 'none' : 'block';
             
             document.getElementById(tabId).classList.add('active');
             hideStatus();
@@ -501,6 +551,143 @@
             .finally(() => {
                 showLoading(false);
                 addRecipesBtn.disabled = false;
+            });
+        });
+
+        // 3. COPY TO SPACE LOGIC
+        const copyMode = document.getElementById('copyMode');
+        const sourceSpace = document.getElementById('sourceSpace');
+        const targetSpace = document.getElementById('targetSpace');
+        const targetLang = document.getElementById('targetLang');
+        const importTags = document.getElementById('importTags');
+        const loadCopyItemsBtn = document.getElementById('loadCopyItemsBtn');
+        const copySelectionSection = document.getElementById('copySelectionSection');
+        const copyItemsTitle = document.getElementById('copyItemsTitle');
+        const copyItemsList = document.getElementById('copyItemsList');
+        const startCopyBtn = document.getElementById('startCopyBtn');
+        const copyProgressSection = document.getElementById('copyProgressSection');
+        const copyLogs = document.getElementById('copyLogs');
+
+        let copySpacesData = [];
+        let copyEventSource = null;
+
+        function loadCopySpaces() {
+            fetch('/api/spaces')
+                .then(res => {
+                    if (res.status === 401) return [];
+                    return res.json();
+                })
+                .then(data => {
+                    copySpacesData = data || [];
+                    [sourceSpace, targetSpace].forEach(select => {
+                        select.innerHTML = '<option value="">-- Select space --</option>';
+                        copySpacesData.forEach(s => {
+                            const opt = document.createElement('option');
+                            opt.value = s.id;
+                            opt.textContent = s.name;
+                            select.appendChild(opt);
+                        });
+                    });
+                })
+                .catch(err => console.error('Failed to load copy spaces:', err));
+        }
+
+        loadCopyItemsBtn.addEventListener('click', () => {
+            const mode = copyMode.value;
+            const src = sourceSpace.value;
+            const dst = targetSpace.value;
+            if (!src || !dst) return alert('Please select both source and target spaces!');
+            if (src === dst) return alert('Source and target spaces must be different!');
+
+            showLoading(true);
+            hideStatus();
+            copySelectionSection.style.display = 'none';
+            copyProgressSection.style.display = 'none';
+
+            const url = mode === 'recipes' ? `/api/tools/space-recipes?space_id=${src}` : `/api/tools/books?space_id=${src}`;
+            
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    copyItemsList.innerHTML = '';
+                    if (!data || data.length === 0) {
+                        setStatus(mode === 'recipes' ? 'No recipes found in source space.' : 'No cookbooks found in source space.', 'info-msg');
+                        return;
+                    }
+
+                    copyItemsTitle.textContent = mode === 'recipes' ? 'Select recipes to copy:' : 'Select cookbooks to copy (including recipes):';
+
+                    data.forEach(item => {
+                        const div = document.createElement('div');
+                        div.className = 'recipe-item';
+                        div.innerHTML = `
+                            <input type="checkbox" class="copy-item-checkbox" data-id="${item.id}" checked style="margin-right:10px; transform: scale(1.2);">
+                            <div class="recipe-info">
+                                <h4 class="recipe-name">${item.name}</h4>
+                                <p class="recipe-desc">${item.description || 'No description'}</p>
+                            </div>
+                            <span style="font-size: 11px; color: #6c757d; font-family: monospace;">ID: ${item.id}</span>
+                        `;
+                        copyItemsList.appendChild(div);
+                    });
+
+                    copySelectionSection.style.display = 'block';
+                })
+                .catch(err => {
+                    console.error(err);
+                    setStatus('Error loading source items.', 'error');
+                })
+                .finally(() => showLoading(false));
+        });
+
+        startCopyBtn.addEventListener('click', () => {
+            const selectedIDs = Array.from(document.querySelectorAll('.copy-item-checkbox:checked'))
+                .map(cb => parseInt(cb.getAttribute('data-id')));
+
+            if (selectedIDs.length === 0) {
+                return alert('Please select at least one item to copy!');
+            }
+
+            const mode = copyMode.value;
+            const src = sourceSpace.value;
+            const dst = targetSpace.value;
+            const lang = targetLang.value;
+            const tags = importTags.checked;
+
+            if (copyEventSource) {
+                copyEventSource.close();
+            }
+
+            copyProgressSection.style.display = 'block';
+            copyLogs.value = 'Starting copy process...\n';
+            startCopyBtn.disabled = true;
+            showLoading(true);
+
+            const streamURL = `/api/tools/copy-space/stream?mode=${mode}&source_space=${src}&target_space=${dst}&target_lang=${encodeURIComponent(lang)}&import_tags=${tags}&ids=${selectedIDs.join(',')}`;
+            copyEventSource = new EventSource(streamURL);
+
+            copyEventSource.addEventListener('status', (e) => {
+                const data = JSON.parse(e.data);
+                copyLogs.value += `[STATUS] ${data.message}\n`;
+                copyLogs.scrollTop = copyLogs.scrollHeight;
+            });
+
+            copyEventSource.addEventListener('complete', (e) => {
+                copyLogs.value += '[COMPLETE] Done!\n';
+                copyLogs.scrollTop = copyLogs.scrollHeight;
+                copyEventSource.close();
+                showLoading(false);
+                startCopyBtn.disabled = false;
+                setStatus('Copy process completed successfully!', 'success');
+            });
+
+            copyEventSource.addEventListener('error', (e) => {
+                copyLogs.value += '[ERROR] SSE connection error or process failed.\n';
+                copyLogs.scrollTop = copyLogs.scrollHeight;
+                copyEventSource.close();
+                showLoading(false);
+                startCopyBtn.disabled = false;
+                setStatus('An error occurred during copying.', 'error');
             });
         });
 

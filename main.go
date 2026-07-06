@@ -15,6 +15,7 @@ import (
 	"recipe_importer_ai/usecases/auth"
 	"recipe_importer_ai/usecases/book"
 	"recipe_importer_ai/usecases/cookbook"
+	"recipe_importer_ai/usecases/copy_space"
 	"recipe_importer_ai/usecases/duplicates"
 	"recipe_importer_ai/usecases/ingredient"
 	"recipe_importer_ai/usecases/import_recipe"
@@ -89,6 +90,9 @@ func main() {
 	ingUpdateUC := ingredient.NewUpdateUseCase(tandoorClient)
 	ingDeleteUC := ingredient.NewDeleteUseCase(tandoorClient)
 
+	copyTranslator := copy_space.NewTranslator(geminiClient)
+	copyUC := copy_space.NewCopyUseCase(tandoorClient, copyTranslator)
+
 	// 3. Initialize HTTP handlers
 	h := api.NewApiHandler(
 		tandoorClient,
@@ -102,6 +106,7 @@ func main() {
 		importImageUC,
 		taskManager,
 		recipeDeleteUC,
+		copyUC,
 	)
 
 	// CLI Batch Mode

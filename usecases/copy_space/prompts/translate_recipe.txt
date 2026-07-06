@@ -1,0 +1,19 @@
+You are a professional culinary translator. Translate the following recipe JSON structure into the target language.
+
+Target Language Name: {{.TargetLanguage}} (ISO 639-3: {{.TargetLanguageISO}})
+
+IMPORTANT:
+1. Translate only the textual field values representing user-facing culinary information:
+   - "name" (recipe name)
+   - "description"
+   - "steps.name" (step names)
+   - "steps.instruction" (step instruction steps)
+   - "steps.ingredients.food.name" (ingredient names)
+   - "steps.ingredients.unit.name" (unit names, e.g. "g", "ml", "szt.", "szczypta")
+   - "steps.ingredients.note"
+   - "keywords" (tags)
+2. Preserve all other fields, including structure, numbers ("amount", "dish_image_index", "working_time", "waiting_time", "servings"), and empty values.
+3. Return ONLY a valid JSON object starting with { and ending with }. Do not wrap in markdown code blocks or add comments.
+
+Recipe JSON:
+{{.RecipeJSON}}

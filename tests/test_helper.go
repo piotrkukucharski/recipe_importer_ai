@@ -8,6 +8,7 @@ import (
 	"recipe_importer_ai/infrastructure/tandoor"
 	"recipe_importer_ai/usecases/auth"
 	"recipe_importer_ai/usecases/cookbook"
+	"recipe_importer_ai/usecases/copy_space"
 	"recipe_importer_ai/usecases/duplicates"
 	"recipe_importer_ai/usecases/import_recipe"
 	"recipe_importer_ai/usecases/recipe"
@@ -37,6 +38,9 @@ func setupTestHandler(ctx context.Context) (*api.ApiHandler, error) {
 	importImageUC := import_recipe.NewImportImageUseCase(processor, tandoorClient, taskManager)
 	recipeDeleteUC := recipe.NewDeleteUseCase(tandoorClient)
 
+	copyTranslator := copy_space.NewTranslator(geminiClient)
+	copyUC := copy_space.NewCopyUseCase(tandoorClient, copyTranslator)
+
 	h := api.NewApiHandler(
 		tandoorClient,
 		authUC,
@@ -49,6 +53,7 @@ func setupTestHandler(ctx context.Context) (*api.ApiHandler, error) {
 		importImageUC,
 		taskManager,
 		recipeDeleteUC,
+		copyUC,
 	)
 
 	return h, nil

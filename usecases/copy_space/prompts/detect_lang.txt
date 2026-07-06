@@ -1,0 +1,5 @@
+Detect the language of the following culinary recipe text (name, description, or instructions).
+Return ONLY the ISO 639-3 three-letter code of the language (e.g. "pol" for Polish, "eng" for English, "deu" for German, "spa" for Spanish, "fra" for French). Do not include any other text, quotes, or markdown format.
+
+Text:
+{{.Text}}
