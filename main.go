@@ -26,9 +26,11 @@ func main() {
 	mcpFlag := flag.Bool("mcp", false, "Start MCP server in Stdio mode")
 	flag.Parse()
 
-	// Load .env file
-	if err := godotenv.Load(); err != nil {
-		services.LogJSON("system", "Main", "Warning: .env file not found", "WARN")
+	// Load .env file if it exists, otherwise fall back to system environment variables
+	if _, err := os.Stat(".env"); err == nil {
+		if err := godotenv.Load(); err != nil {
+			services.LogJSON("system", "Main", "Error loading .env file", "WARN")
+		}
 	}
 
 	ctx := context.Background()
@@ -100,7 +102,7 @@ func runBatchCLI(h *api.Handler, filePath string, spaceID string, token string, 
 	services.LogJSON(cid, "CLI", fmt.Sprintf("Finished processing %d URLs sequentially", count), "INFO")
 }
 
-func runServer(h *api.Handler) {
+func setupServer(h *api.Handler) *echo.Echo {
 	e := echo.New()
 
 	// Middleware Correlation ID
@@ -171,6 +173,12 @@ func runServer(h *api.Handler) {
 		mcpServer.ServeHTTP(c.Response().Writer, c.Request())
 		return nil
 	})
+
+	return e
+}
+
+func runServer(h *api.Handler) {
+	e := setupServer(h)
 
 	port := os.Getenv("PORT")
 	if port == "" {

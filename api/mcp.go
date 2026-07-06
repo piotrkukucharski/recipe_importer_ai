@@ -50,116 +50,116 @@ func newToolResultJSON(data interface{}) *mcp.CallToolResult {
 type ListSpacesArgs struct{}
 
 type ChangeSpaceArgs struct {
-	Space string `json:"space" jsonschema:"description=The Tandoor Space ID to switch to/validate"`
+	Space string `json:"space" jsonschema:"The Tandoor Space ID to switch to/validate"`
 }
 
 type ImportRecipeFromURLArgs struct {
-	Url   string  `json:"url" jsonschema:"description=The recipe source URL"`
-	Space string  `json:"space" jsonschema:"description=The Tandoor Space ID to import the recipe into"`
-	Lang  *string `json:"lang,omitempty" jsonschema:"description=Target language for translation/formatting. Default: 'Polish'"`
+	Url   string  `json:"url" jsonschema:"The recipe source URL"`
+	Space string  `json:"space" jsonschema:"The Tandoor Space ID to import the recipe into"`
+	Lang  *string `json:"lang,omitempty" jsonschema:"Target language for translation/formatting. Default: 'Polish'"`
 }
 
 type ImportRecipeFromTextArgs struct {
-	Text  string  `json:"text" jsonschema:"description=The raw recipe text (ingredients, steps, preparation)"`
-	Space string  `json:"space" jsonschema:"description=The Tandoor Space ID to import the recipe into"`
-	Lang  *string `json:"lang,omitempty" jsonschema:"description=Target language for translation/formatting. Default: 'Polish'"`
+	Text  string  `json:"text" jsonschema:"The raw recipe text (ingredients, steps, preparation)"`
+	Space string  `json:"space" jsonschema:"The Tandoor Space ID to import the recipe into"`
+	Lang  *string `json:"lang,omitempty" jsonschema:"Target language for translation/formatting. Default: 'Polish'"`
 }
 
 type GetImportStatusArgs struct {
-	CorrelationID string `json:"correlation_id" jsonschema:"description=The correlation ID returned when starting the import"`
-	Space         string `json:"space" jsonschema:"description=The Tandoor Space ID"`
+	CorrelationID string `json:"correlation_id" jsonschema:"The correlation ID returned when starting the import"`
+	Space         string `json:"space" jsonschema:"The Tandoor Space ID"`
 }
 
 type CreateRecipeArgs struct {
-	Space       string  `json:"space" jsonschema:"description=The Tandoor Space ID"`
-	Name        string  `json:"name" jsonschema:"description=The recipe name"`
-	Description *string `json:"description,omitempty" jsonschema:"description=The recipe description"`
+	Space       string  `json:"space" jsonschema:"The Tandoor Space ID"`
+	Name        string  `json:"name" jsonschema:"The recipe name"`
+	Description *string `json:"description,omitempty" jsonschema:"The recipe description"`
 }
 
 type GetRecipeArgs struct {
-	Space string `json:"space" jsonschema:"description=The Tandoor Space ID"`
-	Id    string `json:"id" jsonschema:"description=The ID of the recipe to get"`
+	Space string `json:"space" jsonschema:"The Tandoor Space ID"`
+	Id    string `json:"id" jsonschema:"The ID of the recipe to get"`
 }
 
 type UpdateRecipeArgs struct {
-	Space       string  `json:"space" jsonschema:"description=The Tandoor Space ID"`
-	Id          string  `json:"id" jsonschema:"description=The ID of the recipe to update"`
-	Name        *string `json:"name,omitempty" jsonschema:"description=New recipe name"`
-	Description *string `json:"description,omitempty" jsonschema:"description=New recipe description"`
+	Space       string  `json:"space" jsonschema:"The Tandoor Space ID"`
+	Id          string  `json:"id" jsonschema:"The ID of the recipe to update"`
+	Name        *string `json:"name,omitempty" jsonschema:"New recipe name"`
+	Description *string `json:"description,omitempty" jsonschema:"New recipe description"`
 }
 
 type DeleteRecipeArgs struct {
-	Space string `json:"space" jsonschema:"description=The Tandoor Space ID"`
-	Id    string `json:"id" jsonschema:"description=The ID of the recipe to delete"`
+	Space string `json:"space" jsonschema:"The Tandoor Space ID"`
+	Id    string `json:"id" jsonschema:"The ID of the recipe to delete"`
 }
 
 type CreateTagArgs struct {
-	Space       string  `json:"space" jsonschema:"description=The Tandoor Space ID"`
-	Name        string  `json:"name" jsonschema:"description=The tag name"`
-	Description *string `json:"description,omitempty" jsonschema:"description=The tag description"`
+	Space       string  `json:"space" jsonschema:"The Tandoor Space ID"`
+	Name        string  `json:"name" jsonschema:"The tag name"`
+	Description *string `json:"description,omitempty" jsonschema:"The tag description"`
 }
 
 type GetTagArgs struct {
-	Space string `json:"space" jsonschema:"description=The Tandoor Space ID"`
-	Id    string `json:"id" jsonschema:"description=The ID of the tag to get"`
+	Space string `json:"space" jsonschema:"The Tandoor Space ID"`
+	Id    string `json:"id" jsonschema:"The ID of the tag to get"`
 }
 
 type UpdateTagArgs struct {
-	Space       string  `json:"space" jsonschema:"description=The Tandoor Space ID"`
-	Id          string  `json:"id" jsonschema:"description=The ID of the tag to update"`
-	Name        *string `json:"name,omitempty" jsonschema:"description=New tag name"`
-	Description *string `json:"description,omitempty" jsonschema:"description=New tag description"`
+	Space       string  `json:"space" jsonschema:"The Tandoor Space ID"`
+	Id          string  `json:"id" jsonschema:"The ID of the tag to update"`
+	Name        *string `json:"name,omitempty" jsonschema:"New tag name"`
+	Description *string `json:"description,omitempty" jsonschema:"New tag description"`
 }
 
 type DeleteTagArgs struct {
-	Space string `json:"space" jsonschema:"description=The Tandoor Space ID"`
-	Id    string `json:"id" jsonschema:"description=The ID of the tag to delete"`
+	Space string `json:"space" jsonschema:"The Tandoor Space ID"`
+	Id    string `json:"id" jsonschema:"The ID of the tag to delete"`
 }
 
 type CreateBookArgs struct {
-	Space       string  `json:"space" jsonschema:"description=The Tandoor Space ID"`
-	Name        string  `json:"name" jsonschema:"description=The recipe book name"`
-	Description *string `json:"description,omitempty" jsonschema:"description=The book description"`
+	Space       string  `json:"space" jsonschema:"The Tandoor Space ID"`
+	Name        string  `json:"name" jsonschema:"The recipe book name"`
+	Description *string `json:"description,omitempty" jsonschema:"The book description"`
 }
 
 type GetBookArgs struct {
-	Space string `json:"space" jsonschema:"description=The Tandoor Space ID"`
-	Id    string `json:"id" jsonschema:"description=The ID of the book to get"`
+	Space string `json:"space" jsonschema:"The Tandoor Space ID"`
+	Id    string `json:"id" jsonschema:"The ID of the book to get"`
 }
 
 type UpdateBookArgs struct {
-	Space       string  `json:"space" jsonschema:"description=The Tandoor Space ID"`
-	Id          string  `json:"id" jsonschema:"description=The ID of the book to update"`
-	Name        *string `json:"name,omitempty" jsonschema:"description=New book name"`
-	Description *string `json:"description,omitempty" jsonschema:"description=New book description"`
+	Space       string  `json:"space" jsonschema:"The Tandoor Space ID"`
+	Id          string  `json:"id" jsonschema:"The ID of the book to update"`
+	Name        *string `json:"name,omitempty" jsonschema:"New book name"`
+	Description *string `json:"description,omitempty" jsonschema:"New book description"`
 }
 
 type DeleteBookArgs struct {
-	Space string `json:"space" jsonschema:"description=The Tandoor Space ID"`
-	Id    string `json:"id" jsonschema:"description=The ID of the book to delete"`
+	Space string `json:"space" jsonschema:"The Tandoor Space ID"`
+	Id    string `json:"id" jsonschema:"The ID of the book to delete"`
 }
 
 type CreateIngredientArgs struct {
-	Space       string  `json:"space" jsonschema:"description=The Tandoor Space ID"`
-	Name        string  `json:"name" jsonschema:"description=The ingredient name"`
-	Description *string `json:"description,omitempty" jsonschema:"description=The ingredient description"`
+	Space       string  `json:"space" jsonschema:"The Tandoor Space ID"`
+	Name        string  `json:"name" jsonschema:"The ingredient name"`
+	Description *string `json:"description,omitempty" jsonschema:"The ingredient description"`
 }
 
 type GetIngredientArgs struct {
-	Space string `json:"space" jsonschema:"description=The Tandoor Space ID"`
-	Id    string `json:"id" jsonschema:"description=The ID of the ingredient to get"`
+	Space string `json:"space" jsonschema:"The Tandoor Space ID"`
+	Id    string `json:"id" jsonschema:"The ID of the ingredient to get"`
 }
 
 type UpdateIngredientArgs struct {
-	Space       string  `json:"space" jsonschema:"description=The Tandoor Space ID"`
-	Id          string  `json:"id" jsonschema:"description=The ID of the ingredient to update"`
-	Name        *string `json:"name,omitempty" jsonschema:"description=New ingredient name"`
-	Description *string `json:"description,omitempty" jsonschema:"description=New ingredient description"`
+	Space       string  `json:"space" jsonschema:"The Tandoor Space ID"`
+	Id          string  `json:"id" jsonschema:"The ID of the ingredient to update"`
+	Name        *string `json:"name,omitempty" jsonschema:"New ingredient name"`
+	Description *string `json:"description,omitempty" jsonschema:"New ingredient description"`
 }
 
 type DeleteIngredientArgs struct {
-	Space string `json:"space" jsonschema:"description=The Tandoor Space ID"`
-	Id    string `json:"id" jsonschema:"description=The ID of the ingredient to delete"`
+	Space string `json:"space" jsonschema:"The Tandoor Space ID"`
+	Id    string `json:"id" jsonschema:"The ID of the ingredient to delete"`
 }
 
 // BuildMCPServer initializes the MCP server and registers the recipe management tools

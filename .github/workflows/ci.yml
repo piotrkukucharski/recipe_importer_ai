@@ -50,7 +50,7 @@ jobs:
         run: go mod download
 
       - name: Run Unit Tests
-        run: go test -v -run "TestURL|TestInstagram" ./...
+        run: go test -v -run "TestURL|TestInstagram|TestServerInitialization|TestRouting" ./...
 
       - name: Compile App
         run: |
