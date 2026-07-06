@@ -139,8 +139,25 @@ func runServer(h *api.Handler) {
 
 	// MCP Server (SSE Mode)
 	mcpServer := api.NewMCPServer(h)
-	e.GET("/sse", echo.WrapHandler(mcpServer.SSEHandler()))
-	e.POST("/message", echo.WrapHandler(mcpServer.MessageHandler()))
+	e.Any("/sse", func(c echo.Context) error {
+		req := c.Request()
+		token := req.Header.Get("Authorization")
+		if strings.HasPrefix(token, "Bearer ") {
+			token = strings.TrimPrefix(token, "Bearer ")
+		}
+		if token == "" {
+			token = req.Header.Get("X-Tandoor-Token")
+		}
+		if token == "" {
+			token = req.URL.Query().Get("token")
+		}
+
+		ctx := context.WithValue(req.Context(), "tandoor_token", token)
+		c.SetRequest(req.WithContext(ctx))
+
+		mcpServer.ServeHTTP(c.Response().Writer, c.Request())
+		return nil
+	})
 
 	port := os.Getenv("PORT")
 	if port == "" {

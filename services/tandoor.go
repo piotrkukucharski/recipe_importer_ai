@@ -699,3 +699,103 @@ func (s *TandoorService) AddRecipeToBook(bookID int, recipeID int, spaceID strin
 	return s.postWithRetry("/api/recipe-book-entry/", body, spaceID, token, correlationID)
 }
 
+func (s *TandoorService) PostWithRetry(path string, body interface{}, spaceID string, token string, correlationID string) (map[string]interface{}, error) {
+	return s.postWithRetry(path, body, spaceID, token, correlationID)
+}
+
+func (s *TandoorService) GetSingleWithRetry(path string, spaceID string, token string, correlationID string) (map[string]interface{}, error) {
+	return s.getSingleWithRetry(path, spaceID, token, correlationID)
+}
+
+func (s *TandoorService) PatchWithRetry(path string, body interface{}, spaceID string, token string, correlationID string) (map[string]interface{}, error) {
+	var lastErr error
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			time.Sleep(retryInterval * time.Duration(i))
+		}
+
+		if spaceID != "" {
+			if err := s.switchSpace(spaceID, token, correlationID); err != nil {
+				lastErr = err
+				continue
+			}
+		}
+
+		jsonBytes, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
+		}
+
+		req, _ := http.NewRequest("PATCH", s.BaseURL+path, bytes.NewBuffer(jsonBytes))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode >= 500 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("server error %d: %s", resp.StatusCode, string(bodyBytes))
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("tandoor error %d: %s", resp.StatusCode, string(bodyBytes))
+		}
+
+		var data map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+			return nil, err
+		}
+		return data, nil
+	}
+	return nil, lastErr
+}
+
+func (s *TandoorService) DeleteWithRetry(path string, spaceID string, token string, correlationID string) error {
+	var lastErr error
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			time.Sleep(retryInterval * time.Duration(i))
+		}
+
+		if spaceID != "" {
+			if err := s.switchSpace(spaceID, token, correlationID); err != nil {
+				lastErr = err
+				continue
+			}
+		}
+
+		req, _ := http.NewRequest("DELETE", s.BaseURL+path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode >= 500 {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("server error %d: %s", resp.StatusCode, string(bodyBytes))
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 && resp.StatusCode != http.StatusNotFound {
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("tandoor error %d: %s", resp.StatusCode, string(bodyBytes))
+		}
+		return nil
+	}
+	return lastErr
+}
+
+
