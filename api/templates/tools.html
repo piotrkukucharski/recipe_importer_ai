@@ -378,10 +378,16 @@
         });
 
         // 2. BOOK AI SUGGESTIONS LOGIC
+        let suggestEventSource = null;
+
         analyzeBookBtn.addEventListener('click', () => {
             const spaceID = spaceSelect.value;
             const bookID = bookSelect.value;
             if (!spaceID || !bookID) return alert('Please select a space and a recipe book!');
+
+            if (suggestEventSource) {
+                suggestEventSource.close();
+            }
 
             showLoading(true);
             hideStatus();
@@ -389,52 +395,67 @@
             addRecipesBtn.style.display = 'none';
             analyzeBookBtn.disabled = true;
 
-            fetch('/api/tools/suggest-book-recipes', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    space_id: spaceID,
-                    book_id: parseInt(bookID)
-                })
-            })
-            .then(res => res.json())
-            .then(data => {
-                const matched = data.suggested_recipes || [];
-                if (matched.length === 0) {
-                    setStatus('AI did not find any new recipes matching this recipe book.', 'info-msg');
-                    return;
-                }
+            const url = `/api/tools/suggest-book-recipes/stream?space_id=${spaceID}&book_id=${bookID}`;
+            suggestEventSource = new EventSource(url);
 
-                setStatus(`AI matched ${matched.length} recipes for the selected recipe book.`, 'success');
-                
-                bookResultsDiv.innerHTML = '<h3>Suggested recipes to add:</h3>';
-                const list = document.createElement('div');
-                list.className = 'recipe-list';
-                
-                matched.forEach(recipe => {
-                    const item = document.createElement('div');
-                    item.className = 'recipe-item';
-                    item.innerHTML = `
-                        <input type="checkbox" class="recipe-book-checkbox" data-id="${recipe.id}" checked style="margin-right:10px; transform: scale(1.2);">
-                        <img class="recipe-img" src="${recipe.image || 'https://via.placeholder.com/60?text=No+Photo'}" alt="Recipe photo">
-                        <div class="recipe-info">
-                            <h4 class="recipe-name">${recipe.name}</h4>
-                            <p class="recipe-desc">${recipe.description || 'No description'}</p>
-                            ${recipe.source_url ? `<a class="recipe-url" href="${recipe.source_url}" target="_blank">${recipe.source_url}</a>` : ''}
-                        </div>
-                        <span style="font-size: 11px; color: #6c757d; font-family: monospace;">ID: ${recipe.id}</span>
-                    `;
-                    list.appendChild(item);
-                });
-                
-                bookResultsDiv.appendChild(list);
-                addRecipesBtn.style.display = 'block';
-            })
-            .catch(err => {
-                console.error(err);
-                setStatus('Error generating AI recommendations.', 'error');
-            })
-            .finally(() => {
+            suggestEventSource.addEventListener('status', (e) => {
+                try {
+                    const data = JSON.parse(e.data);
+                    setStatus(data.message, 'info-msg');
+                    if (data.message === 'Complete') {
+                        suggestEventSource.close();
+                        showLoading(false);
+                        analyzeBookBtn.disabled = false;
+                    }
+                } catch (err) {
+                    console.error('Failed to parse status event:', err);
+                }
+            });
+
+            suggestEventSource.addEventListener('recipes', (e) => {
+                try {
+                    const matched = JSON.parse(e.data) || [];
+                    if (matched.length === 0) {
+                        setStatus('AI did not find any new recipes matching this recipe book.', 'info-msg');
+                        return;
+                    }
+
+                    setStatus(`AI matched ${matched.length} recipes for the selected recipe book.`, 'success');
+                    
+                    bookResultsDiv.innerHTML = '<h3>Suggested recipes to add:</h3>';
+                    const list = document.createElement('div');
+                    list.className = 'recipe-list';
+                    
+                    matched.forEach(recipe => {
+                        const item = document.createElement('div');
+                        item.className = 'recipe-item';
+                        item.innerHTML = `
+                            <input type="checkbox" class="recipe-book-checkbox" data-id="${recipe.id}" checked style="margin-right:10px; transform: scale(1.2);">
+                            <img class="recipe-img" src="${recipe.image || 'https://via.placeholder.com/60?text=No+Photo'}" alt="Recipe photo">
+                            <div class="recipe-info">
+                                <h4 class="recipe-name">${recipe.name}</h4>
+                                <p class="recipe-desc">${recipe.description || 'No description'}</p>
+                                ${recipe.source_url ? `<a class="recipe-url" href="${recipe.source_url}" target="_blank">${recipe.source_url}</a>` : ''}
+                            </div>
+                            <span style="font-size: 11px; color: #6c757d; font-family: monospace;">ID: ${recipe.id}</span>
+                        `;
+                        list.appendChild(item);
+                    });
+                    
+                    bookResultsDiv.appendChild(list);
+                    addRecipesBtn.style.display = 'block';
+                } catch (err) {
+                    console.error('Failed to parse recipes event:', err);
+                    setStatus('Error displaying recommendations.', 'error');
+                }
+            });
+
+            suggestEventSource.addEventListener('error', (e) => {
+                console.error('SSE Error:', e);
+                let msg = 'Error generating AI recommendations.';
+                // EventSource errors do not always contain data in standard implementation
+                setStatus(msg, 'error');
+                suggestEventSource.close();
                 showLoading(false);
                 analyzeBookBtn.disabled = false;
             });

@@ -12,6 +12,7 @@ import (
 	"os"
 	"recipe_importer_ai/services"
 	"runtime/debug"
+	"strconv"
 	"sync"
 	"strings"
 	"time"
@@ -980,35 +981,49 @@ func getRecipeID(recipe map[string]interface{}) int {
 	return 0
 }
 
-type SuggestBookRecipesRequest struct {
-	SpaceID string `json:"space_id"`
-	BookID  int    `json:"book_id"`
-}
+func (h *Handler) SuggestBookRecipesStream(c echo.Context) error {
+	w := c.Response()
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
 
-func (h *Handler) SuggestBookRecipes(c echo.Context) error {
-	var req SuggestBookRecipesRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	spaceID := c.QueryParam("space_id")
+	bookIDStr := c.QueryParam("book_id")
+	bookID, err := strconv.Atoi(bookIDStr)
+	if err != nil {
+		sendSSEEvent(w, "error", map[string]string{"message": "Invalid book_id"})
+		return nil
 	}
 
 	token := h.getToken(c)
 	if token == "" {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+		sendSSEEvent(w, "error", map[string]string{"message": "Unauthorized"})
+		return nil
 	}
-	correlationID := c.Request().Header.Get("X-Correlation-ID")
+	correlationID := fmt.Sprintf("suggest-%d", time.Now().UnixNano())
+
+	sendStatus := func(msg string) {
+		sendSSEEvent(w, "status", map[string]string{"message": msg})
+	}
 
 	// 1. Get book details
-	book, err := h.Tandoor.GetRecipeBook(req.BookID, req.SpaceID, token, correlationID)
+	sendStatus("Fetching recipe book details...")
+	book, err := h.Tandoor.GetRecipeBook(bookID, spaceID, token, correlationID)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to get book: %v", err)})
+		sendSSEEvent(w, "error", map[string]string{"message": fmt.Sprintf("Failed to get book details: %v", err)})
+		return nil
 	}
 	bookName, _ := book["name"].(string)
 	bookDesc, _ := book["description"].(string)
 
 	// 2. Get book entries
-	bookEntries, err := h.Tandoor.GetRecipeBookEntries(req.BookID, req.SpaceID, token, correlationID)
+	sendStatus("Fetching recipes currently in the book...")
+	bookEntries, err := h.Tandoor.GetRecipeBookEntries(bookID, spaceID, token, correlationID)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to get book entries: %v", err)})
+		sendSSEEvent(w, "error", map[string]string{"message": fmt.Sprintf("Failed to get book entries: %v", err)})
+		return nil
 	}
 
 	inBookMap := make(map[int]bool)
@@ -1027,9 +1042,11 @@ func (h *Handler) SuggestBookRecipes(c echo.Context) error {
 	}
 
 	// 3. Get all recipes in space
-	allRecipes, err := h.Tandoor.GetRecipes(req.SpaceID, token, correlationID)
+	sendStatus("Fetching all recipes in the space...")
+	allRecipes, err := h.Tandoor.GetRecipes(spaceID, token, correlationID)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to get recipes: %v", err)})
+		sendSSEEvent(w, "error", map[string]string{"message": fmt.Sprintf("Failed to get recipes: %v", err)})
+		return nil
 	}
 
 	var candidates []map[string]interface{}
@@ -1041,7 +1058,9 @@ func (h *Handler) SuggestBookRecipes(c echo.Context) error {
 	}
 
 	if len(candidates) == 0 {
-		return c.JSON(http.StatusOK, map[string]interface{}{"suggested_recipes": []interface{}{}})
+		sendSSEEvent(w, "recipes", []interface{}{})
+		sendStatus("Complete")
+		return nil
 	}
 
 	// 4. Get 10 newest examples currently in the book
@@ -1064,7 +1083,7 @@ func (h *Handler) SuggestBookRecipes(c echo.Context) error {
 	}
 
 	// 5. Ask Gemini to classify
-	// Chunk candidate list if it exceeds 100 to keep it fast
+	sendStatus("Analyzing recipes using Gemini AI...")
 	if len(candidates) > 100 {
 		candidates = candidates[:100]
 	}
@@ -1072,7 +1091,8 @@ func (h *Handler) SuggestBookRecipes(c echo.Context) error {
 	ctx := context.Background()
 	matchedIDs, err := h.Gemini.ClassifyRecipesForBook(ctx, bookName, bookDesc, existingExamples, candidates, correlationID)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Gemini classification failed: %v", err)})
+		sendSSEEvent(w, "error", map[string]string{"message": fmt.Sprintf("Gemini classification failed: %v", err)})
+		return nil
 	}
 
 	matchedMap := make(map[int]bool)
@@ -1088,10 +1108,20 @@ func (h *Handler) SuggestBookRecipes(c echo.Context) error {
 		}
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"suggested_recipes": suggestedRecipes,
-	})
+	sendSSEEvent(w, "recipes", suggestedRecipes)
+	sendStatus("Complete")
+	return nil
 }
+
+func sendSSEEvent(w *echo.Response, event string, data interface{}) {
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(w.Writer, "event: %s\ndata: %s\n\n", event, string(payload))
+	w.Flush()
+}
+
 
 type AddRecipesToBookRequest struct {
 	SpaceID   string `json:"space_id"`

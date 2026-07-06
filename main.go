@@ -149,7 +149,7 @@ func setupServer(h *api.Handler) *echo.Echo {
     e.GET("/api/tools/books", h.GetRecipeBooks)
     e.GET("/api/tools/duplicates", h.GetDuplicates)
     e.POST("/api/tools/clean-duplicates", h.CleanDuplicates)
-    e.POST("/api/tools/suggest-book-recipes", h.SuggestBookRecipes)
+    e.GET("/api/tools/suggest-book-recipes/stream", h.SuggestBookRecipesStream)
     e.POST("/api/tools/add-recipes-to-book", h.AddRecipesToBook)
 
 	// MCP Server (SSE Mode)
